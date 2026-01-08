@@ -414,12 +414,14 @@ const Edital = () => {
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
-                           <button 
-                             onClick={() => setModalJuris({title: s.name, content: s.jurisprudencia || "Nenhuma decisão cadastrada para este tema."})}
-                             className="flex items-center gap-2 px-6 py-3 bg-pcpr-gold text-white rounded-xl font-black text-[10px] uppercase shadow-lg shadow-yellow-500/20 hover:scale-105 transition-all"
-                           >
-                             <Scale size={14} /> Tribunais
-                           </button>
+                           {s.jurisprudencia && (
+                             <button 
+                               onClick={() => setModalJuris({title: s.name, content: s.jurisprudencia || "Nenhuma decisão cadastrada para este tema."})}
+                               className="flex items-center gap-2 px-6 py-3 bg-pcpr-gold text-white rounded-xl font-black text-[10px] uppercase shadow-lg shadow-yellow-500/20 hover:scale-105 transition-all"
+                             >
+                               <Scale size={14} /> Tribunais
+                             </button>
+                           )}
                            <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-center">
                              <p className="text-[10px] font-black text-slate-400 uppercase">Horas</p>
                              <p className="font-bold text-xs">{Math.floor(s.timeSpent/3600)}h</p>
