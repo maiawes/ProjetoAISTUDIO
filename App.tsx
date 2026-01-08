@@ -6,9 +6,39 @@ import {
   Gavel, Play, Pause, RotateCcw, Trash2, ExternalLink, ChevronRight,
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
   X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter,
-  Coffee, Brain, Gamepad2
+  Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff
 } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 import Sitemap from './components/Sitemap';
+
+// --- Firebase Configuration ---
+// ATENÇÃO: Substitua pelos seus dados reais do Console do Firebase
+// Se a API Key for o placeholder, o app entrará em "Modo Demo" automaticamente.
+const firebaseConfig = {
+  apiKey: "AIzaSyD-YOUR_API_KEY_HERE",
+  authDomain: "your-app.firebaseapp.com",
+  projectId: "your-app",
+  storageBucket: "your-app.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abc123456"
+};
+
+// Check if Firebase is properly configured
+const isFirebaseConfigured = firebaseConfig.apiKey !== "AIzaSyD-YOUR_API_KEY_HERE";
+
+// Initialize Firebase only if configured
+let auth: any, db: any;
+if (isFirebaseConfigured) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (e) {
+    console.warn("Firebase initialization failed:", e);
+  }
+}
 
 // --- Types ---
 interface Subject {
@@ -171,7 +201,7 @@ const INITIAL_SUBJECTS: Subject[] = DISCIPLINE_DATA.flatMap(m =>
     id: `${m.materia.toLowerCase().replace(/\s+/g, '-')}-${i}`,
     discipline: m.materia,
     name,
-    relevance: 75,
+    relevance: 0, 
     timeSpent: 0,
     questionLink: "",
     jurisprudencia: getInitialJuris(m.materia, name),
@@ -194,8 +224,10 @@ const CRONOGRAMA_PADRAO: Record<number, string[]> = {
 const AuthContext = createContext<{
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string) => void;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  isDemo: boolean;
 } | null>(null);
 
 const StudyContext = createContext<{
@@ -268,12 +300,19 @@ const Sidebar = () => {
 };
 
 const Header = ({ title }: { title: string }) => {
-  const { user } = useAuth();
+  const { user, isDemo } = useAuth();
   return (
     <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
       <div>
         <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">{title}</h1>
-        <p className="text-slate-500 text-sm mt-1 font-bold">Investigador PCPR Alpha 2025</p>
+        <div className="flex items-center gap-2 mt-1">
+           <p className="text-slate-500 text-sm font-bold">Investigador PCPR Alpha 2025</p>
+           {isDemo && (
+             <span className="bg-amber-100 text-amber-700 text-[10px] font-black uppercase px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
+               <WifiOff size={10} /> Demo Offline
+             </span>
+           )}
+        </div>
       </div>
       <div className="flex items-center space-x-4">
         <div className="hidden sm:block text-right">
@@ -292,6 +331,7 @@ const Header = ({ title }: { title: string }) => {
 
 const Dashboard = () => {
   const { state, markReviewComplete } = useStudy();
+  const [randomJuris, setRandomJuris] = useState<{title: string, content: string} | null>(null);
   const totalSeconds = state.subjects.reduce((a, b) => a + b.timeSpent, 0);
   const now = new Date();
   const todayIndex = now.getDay();
@@ -299,16 +339,42 @@ const Dashboard = () => {
   const formattedDate = now.toLocaleDateString('pt-BR');
   const todaySchedule = state.schedule[todayIndex] || [];
 
-  // Logic: Find subjects that need review AND belong to disciplines scheduled for today
+  useEffect(() => {
+    const keys = Object.keys(JURIS_DB);
+    if (keys.length > 0) {
+      const randomKey = keys[Math.floor(Math.random() * keys.length)];
+      setRandomJuris({ title: randomKey, content: JURIS_DB[randomKey] });
+    }
+  }, []);
+
   const pendingReviews = state.subjects.filter(s => s.needsReview);
-  
-  // Prioritize reviews that match today's scheduled disciplines
   const urgentReviews = pendingReviews.filter(s => todaySchedule.includes(s.discipline));
   const otherReviews = pendingReviews.filter(s => !todaySchedule.includes(s.discipline));
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       <Header title="Painel de Controle" />
+      
+      {/* Jurisprudence Banner */}
+      {randomJuris && (
+        <div className="mb-10 bg-gradient-to-r from-pcpr-blue to-blue-900 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-xl shadow-blue-900/20">
+          <div className="absolute top-0 right-0 p-10 opacity-10 rotate-12">
+            <Scale size={150} />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="bg-pcpr-gold text-pcpr-dark px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                Jurisprudência do Dia
+              </span>
+              <span className="text-blue-200 text-xs font-medium">Sorteio Aleatório</span>
+            </div>
+            <h3 className="text-2xl font-black mb-2">{randomJuris.title}</h3>
+            <p className="text-blue-100 font-medium leading-relaxed max-w-2xl">
+              {randomJuris.content.split('\n')[0]}
+            </p>
+          </div>
+        </div>
+      )}
       
       {/* Alert Section */}
       {urgentReviews.length > 0 && (
@@ -407,7 +473,6 @@ const Pomodoro = () => {
     { label: 'Pausa Longa', min: 15, icon: <Gamepad2 size={18} className="text-purple-500" /> },
   ];
 
-  // Group subjects by discipline
   const disciplines = Array.from(new Set(state.subjects.map(s => s.discipline)));
 
   useEffect(() => {
@@ -451,11 +516,9 @@ const Pomodoro = () => {
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-        {/* Timer Column */}
         <div className="sticky top-4">
            <div className="glass p-10 rounded-[3rem] shadow-2xl border border-white/20 text-center relative overflow-hidden">
              
-             {/* Presets Row */}
              <div className="flex justify-center gap-3 mb-8 flex-wrap">
                {PRESETS.map((p, i) => (
                  <button 
@@ -487,7 +550,6 @@ const Pomodoro = () => {
            </div>
         </div>
 
-        {/* Selection Column */}
         <div className="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 h-[600px] flex flex-col">
            <div className="mb-4">
               <label className="block text-xs font-black uppercase text-slate-400 mb-2 px-2">Filtrar por Disciplina</label>
@@ -568,21 +630,31 @@ const Edital = () => {
                   {topics.map(s => (
                     <div key={s.id} className="p-8">
                       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-6">
-                        <div className="flex-grow">
+                        <div className="flex-grow w-full">
                           <h4 className="font-bold text-lg text-slate-800 dark:text-slate-200">{s.name}</h4>
-                          <div className="flex items-center gap-4 mt-2">
-                             <span className="text-[10px] font-black uppercase text-slate-400">Relevância {s.relevance}%</span>
-                             <div className="h-1 flex-grow bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-pcpr-blue transition-all" style={{width: `${s.relevance}%`}}></div>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-4 mt-4 w-full">
+                             {/* Editable Relevance Slider */}
+                             <div className="flex-grow flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                               <span className="text-[10px] font-black uppercase text-slate-400 whitespace-nowrap">Relevância</span>
+                               <input 
+                                 type="range" 
+                                 min="0" 
+                                 max="100" 
+                                 value={s.relevance}
+                                 onChange={(e) => updateSubjectData(s.id, { relevance: parseInt(e.target.value) })}
+                                 className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                               />
+                               <span className="text-xs font-bold w-8 text-right text-pcpr-blue dark:text-blue-400">{s.relevance}%</span>
                              </div>
+
                              {s.needsReview && (
-                               <span className="bg-amber-100 text-amber-600 px-2 py-1 rounded-md text-[10px] font-bold uppercase flex items-center gap-1">
-                                 <AlertTriangle size={10} /> Revisar
+                               <span className="bg-amber-100 text-amber-600 px-3 py-2 rounded-xl text-[10px] font-bold uppercase flex items-center gap-1 shadow-sm whitespace-nowrap">
+                                 <AlertTriangle size={12} /> Revisar
                                </span>
                              )}
                           </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3 mt-4 xl:mt-0">
                            {s.jurisprudencia && (
                              <button 
                                onClick={() => setModalJuris({title: s.name, content: s.jurisprudencia || "Nenhuma decisão cadastrada para este tema."})}
@@ -632,7 +704,6 @@ const Edital = () => {
         })}
       </div>
 
-      {/* Jurisprudencia Modal */}
       {modalJuris && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] w-full max-w-2xl shadow-2xl border border-white/10 max-h-[80vh] overflow-y-auto relative">
@@ -780,18 +851,65 @@ const Schedule = () => {
 
 const AuthScreen = () => {
   const [email, setEmail] = useState('');
-  const { login } = useAuth();
+  const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [error, setError] = useState('');
+  const { login, register, isDemo } = useAuth();
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      if (isRegistering) {
+        await register(email, password);
+      } else {
+        await login(email, password);
+      }
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || "Erro de autenticação.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden text-center">
       <div className="w-full max-w-md bg-white p-10 rounded-[3rem] shadow-2xl relative z-10 animate-in zoom-in-95 duration-500">
         <div className="w-20 h-20 bg-pcpr-blue mx-auto rounded-3xl flex items-center justify-center text-white mb-6 shadow-xl shadow-blue-500/20">
           <Gavel size={40} />
         </div>
-        <h1 className="text-3xl font-black uppercase tracking-tighter">Login Candidato</h1>
+        <h1 className="text-3xl font-black uppercase tracking-tighter">
+          {isRegistering ? 'Nova Conta' : 'Login Candidato'}
+        </h1>
         <p className="text-slate-400 text-sm font-bold mt-2 mb-8">Hub de Estudos PCPR 2025</p>
+        
+        {isDemo && (
+          <div className="bg-amber-100 text-amber-700 p-3 rounded-xl text-xs font-bold mb-6 flex items-center justify-center gap-2">
+            <WifiOff size={14} /> Modo Demo Ativo (Offline)
+          </div>
+        )}
+
+        {error && <div className="bg-red-50 text-red-500 p-3 rounded-xl text-xs font-bold mb-4">{error}</div>}
+
         <div className="space-y-4">
-          <input type="email" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border-none outline-none font-bold focus:ring-2 focus:ring-pcpr-blue" />
-          <button onClick={() => login(email)} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-[1.02] active:scale-95 transition-all">Entrar no Hub</button>
+          <input type="email" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border-none outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800" />
+          <input type="password" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border-none outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800" />
+          
+          <button onClick={handleSubmit} disabled={loading} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
+             {loading ? <Loader2 className="animate-spin" /> : (isRegistering ? 'Criar Conta' : 'Entrar no Hub')}
+          </button>
+
+          <button onClick={() => setIsRegistering(!isRegistering)} className="text-slate-400 text-xs font-bold hover:text-pcpr-blue mt-4">
+            {isRegistering ? 'Já tem conta? Entrar' : 'Não tem conta? Cadastrar'}
+          </button>
+        </div>
+        
+        <div className="mt-8 pt-6 border-t border-slate-100">
+           <p className="text-[10px] text-slate-300 font-medium">
+             {isDemo ? 'Running in Simulated Mode' : 'Database Integration Active'}
+           </p>
         </div>
       </div>
     </div>
@@ -807,8 +925,8 @@ const App: React.FC = () => {
   const Router = isPreview ? HashRouter : BrowserRouter;
 
   const [state, setState] = useState<UserState>(() => {
-    const s = localStorage.getItem('pcpr_store_v9');
-    return s ? JSON.parse(s) : { 
+    // Fallback initial state if not logged in yet or no DB connection
+    return { 
       subjects: INITIAL_SUBJECTS, 
       schedule: CRONOGRAMA_PADRAO,
       pomodoroConfig: { focus: 25, short: 5, long: 15 }, 
@@ -816,20 +934,117 @@ const App: React.FC = () => {
     };
   });
 
+  // Auth Listener & Data Fetching
   useEffect(() => {
-    const saved = localStorage.getItem('pcpr_auth');
-    if (saved) setUser({ uid: '123', email: saved });
-    setLoading(false);
+    // REAL FIREBASE MODE
+    if (isFirebaseConfigured && auth) {
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+        if (firebaseUser) {
+          setUser({ uid: firebaseUser.uid, email: firebaseUser.email || '' });
+          
+          if (db) {
+             try {
+               const docRef = doc(db, "users", firebaseUser.uid);
+               const docSnap = await getDoc(docRef);
+               if (docSnap.exists()) {
+                 setState(docSnap.data() as UserState);
+               } else {
+                 await setDoc(docRef, state);
+               }
+             } catch (e) {
+               console.error("Error fetching data:", e);
+             }
+          }
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } 
+    // DEMO / MOCK MODE
+    else {
+      console.log("Running in Demo Mode");
+      const checkMockAuth = async () => {
+        // Simulate loading time
+        await new Promise(r => setTimeout(r, 500));
+        
+        const savedUser = localStorage.getItem('pcpr_mock_auth');
+        if (savedUser) {
+          try {
+            const u = JSON.parse(savedUser);
+            setUser(u);
+            const savedData = localStorage.getItem(`pcpr_store_${u.uid}`);
+            if (savedData) setState(JSON.parse(savedData));
+          } catch(e) {
+            console.error("Demo data parse error", e);
+            localStorage.removeItem('pcpr_mock_auth');
+          }
+        }
+        setLoading(false);
+      };
+      checkMockAuth();
+    }
   }, []);
 
+  // Sync state to Persistence (Firestore OR LocalStorage)
   useEffect(() => {
-    localStorage.setItem('pcpr_store_v9', JSON.stringify(state));
+    if (user) {
+      if (isFirebaseConfigured && db) {
+        const saveToDb = async () => {
+           try {
+             await setDoc(doc(db, "users", user.uid), state, { merge: true });
+           } catch (e) {
+             console.error("Error saving state:", e);
+           }
+        };
+        const handler = setTimeout(saveToDb, 1000);
+        return () => clearTimeout(handler);
+      } else {
+        // Save to LocalStorage in Demo Mode
+        localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
+      }
+    }
+    
+    // Always sync theme
     if (state.theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
-  }, [state]);
+  }, [state, user]);
 
-  const login = (email: string) => { if (!email) return; localStorage.setItem('pcpr_auth', email); setUser({ uid: '123', email }); };
-  const logout = () => { localStorage.removeItem('pcpr_auth'); setUser(null); };
+  const login = async (e: string, p: string) => {
+    if (isFirebaseConfigured && auth) {
+      await signInWithEmailAndPassword(auth, e, p);
+    } else {
+      // Mock Login
+      await new Promise(r => setTimeout(r, 800));
+      if (!e || !p) throw new Error("Preencha todos os campos (Demo)");
+      const u = { uid: 'demo-user-123', email: e };
+      localStorage.setItem('pcpr_mock_auth', JSON.stringify(u));
+      setUser(u);
+    }
+  };
+  
+  const register = async (e: string, p: string) => {
+    if (isFirebaseConfigured && auth) {
+      await createUserWithEmailAndPassword(auth, e, p);
+    } else {
+      // Mock Register
+      await new Promise(r => setTimeout(r, 800));
+      if (!e || !p) throw new Error("Preencha todos os campos (Demo)");
+      const u = { uid: 'demo-user-123', email: e };
+      localStorage.setItem('pcpr_mock_auth', JSON.stringify(u));
+      setUser(u);
+    }
+  };
+
+  const logout = () => {
+    if (isFirebaseConfigured && auth) {
+      signOut(auth);
+    } else {
+      localStorage.removeItem('pcpr_mock_auth');
+      setUser(null);
+    }
+  };
 
   const updateState = (up: Partial<UserState>) => setState(s => ({...s, ...up}));
 
@@ -882,11 +1097,16 @@ const App: React.FC = () => {
     setState(s => ({...s, subjects: s.subjects.map(subj => subj.id === id ? {...subj, ...data} : subj)}));
   };
 
-  if (loading) return null;
-  if (!user) return <AuthContext.Provider value={{ user: null, loading, login, logout }}><AuthScreen /></AuthContext.Provider>;
+  if (loading) return (
+     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="animate-spin text-pcpr-blue w-12 h-12" />
+     </div>
+  );
+
+  if (!user) return <AuthContext.Provider value={{ user: null, loading, login, register, logout, isDemo: !isFirebaseConfigured }}><AuthScreen /></AuthContext.Provider>;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, isDemo: !isFirebaseConfigured }}>
       <StudyContext.Provider value={{ 
         state, 
         updateState,
