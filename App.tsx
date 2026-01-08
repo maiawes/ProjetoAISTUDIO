@@ -17,12 +17,13 @@ import Sitemap from './components/Sitemap';
 // ATENÇÃO: Substitua pelos seus dados reais do Console do Firebase
 // Se a API Key for o placeholder, o app entrará em "Modo Demo" automaticamente.
 const firebaseConfig = {
-  apiKey: "AIzaSyD-YOUR_API_KEY_HERE",
-  authDomain: "your-app.firebaseapp.com",
-  projectId: "your-app",
-  storageBucket: "your-app.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abc123456"
+  apiKey: "AIzaSyAcgYFNBKP7e8Qx5k9DcRQSNIOj4hQmBRY",
+  authDomain: "projetoaistudio.firebaseapp.com",
+  projectId: "projetoaistudio",
+  storageBucket: "projetoaistudio.firebasestorage.app",
+  messagingSenderId: "861465542556",
+  appId: "1:861465542556:web:f77d5a190dd53554d51259",
+  measurementId: "G-6JKYC5SEHE"
 };
 
 // Check if Firebase is properly configured
@@ -875,15 +876,15 @@ const AuthScreen = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden text-center">
-      <div className="w-full max-w-md bg-white p-10 rounded-[3rem] shadow-2xl relative z-10 animate-in zoom-in-95 duration-500">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 relative overflow-hidden text-center">
+      <div className="w-full max-w-md bg-white p-10 rounded-[3rem] shadow-2xl relative z-10 animate-in zoom-in-95 duration-500 border border-slate-100">
         <div className="w-20 h-20 bg-pcpr-blue mx-auto rounded-3xl flex items-center justify-center text-white mb-6 shadow-xl shadow-blue-500/20">
           <Gavel size={40} />
         </div>
-        <h1 className="text-3xl font-black uppercase tracking-tighter">
+        <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-900">
           {isRegistering ? 'Nova Conta' : 'Login Candidato'}
         </h1>
-        <p className="text-slate-400 text-sm font-bold mt-2 mb-8">Hub de Estudos PCPR 2025</p>
+        <p className="text-slate-500 text-sm font-bold mt-2 mb-8">Hub de Estudos PCPR 2025</p>
         
         {isDemo && (
           <div className="bg-amber-100 text-amber-700 p-3 rounded-xl text-xs font-bold mb-6 flex items-center justify-center gap-2">
@@ -891,11 +892,11 @@ const AuthScreen = () => {
           </div>
         )}
 
-        {error && <div className="bg-red-50 text-red-500 p-3 rounded-xl text-xs font-bold mb-4">{error}</div>}
+        {error && <div className="bg-red-50 text-red-500 p-3 rounded-xl text-xs font-bold mb-4 border border-red-100">{error}</div>}
 
         <div className="space-y-4">
-          <input type="email" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border-none outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800" />
-          <input type="password" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border-none outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800" />
+          <input type="email" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800 placeholder:text-slate-400" />
+          <input type="password" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800 placeholder:text-slate-400" />
           
           <button onClick={handleSubmit} disabled={loading} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
              {loading ? <Loader2 className="animate-spin" /> : (isRegistering ? 'Criar Conta' : 'Entrar no Hub')}
@@ -907,7 +908,7 @@ const AuthScreen = () => {
         </div>
         
         <div className="mt-8 pt-6 border-t border-slate-100">
-           <p className="text-[10px] text-slate-300 font-medium">
+           <p className="text-[10px] text-slate-400 font-medium">
              {isDemo ? 'Running in Simulated Mode' : 'Database Integration Active'}
            </p>
         </div>
@@ -930,7 +931,7 @@ const App: React.FC = () => {
       subjects: INITIAL_SUBJECTS, 
       schedule: CRONOGRAMA_PADRAO,
       pomodoroConfig: { focus: 25, short: 5, long: 15 }, 
-      theme: 'dark' 
+      theme: 'light' 
     };
   });
 
@@ -1098,7 +1099,7 @@ const App: React.FC = () => {
   };
 
   if (loading) return (
-     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <Loader2 className="animate-spin text-pcpr-blue w-12 h-12" />
      </div>
   );
