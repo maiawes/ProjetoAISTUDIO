@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Timer, BookOpen, Calendar, LogOut, Moon, Sun, 
   Gavel, Play, Pause, RotateCcw, Trash2, ExternalLink, ChevronRight,
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
-  X, RefreshCw, Zap, Settings2, Check, Scale, Globe
+  X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter
 } from 'lucide-react';
 import Sitemap from './components/Sitemap';
 
@@ -18,6 +18,8 @@ interface Subject {
   timeSpent: number;
   questionLink?: string;
   jurisprudencia?: string;
+  lastStudied?: string; // ISO Date string
+  needsReview?: boolean;
 }
 
 interface UserState {
@@ -171,7 +173,9 @@ const INITIAL_SUBJECTS: Subject[] = DISCIPLINE_DATA.flatMap(m =>
     relevance: 75,
     timeSpent: 0,
     questionLink: "",
-    jurisprudencia: getInitialJuris(m.materia, name)
+    jurisprudencia: getInitialJuris(m.materia, name),
+    needsReview: false,
+    lastStudied: undefined
   }))
 );
 
@@ -196,7 +200,8 @@ const AuthContext = createContext<{
 const StudyContext = createContext<{
   state: UserState;
   updateState: (update: Partial<UserState>) => void;
-  addTime: (id: string, seconds: number) => void;
+  addTime: (ids: string[], seconds: number) => void;
+  markReviewComplete: (id: string) => void;
   addScheduleItem: (day: number, subject: string) => void;
   removeScheduleItem: (day: number, subject: string) => void;
   resetSchedule: () => void;
@@ -285,7 +290,7 @@ const Header = ({ title }: { title: string }) => {
 // --- Views ---
 
 const Dashboard = () => {
-  const { state } = useStudy();
+  const { state, markReviewComplete } = useStudy();
   const totalSeconds = state.subjects.reduce((a, b) => a + b.timeSpent, 0);
   const now = new Date();
   const todayIndex = now.getDay();
@@ -293,9 +298,50 @@ const Dashboard = () => {
   const formattedDate = now.toLocaleDateString('pt-BR');
   const todaySchedule = state.schedule[todayIndex] || [];
 
+  // Logic: Find subjects that need review AND belong to disciplines scheduled for today
+  const pendingReviews = state.subjects.filter(s => s.needsReview);
+  
+  // Prioritize reviews that match today's scheduled disciplines
+  const urgentReviews = pendingReviews.filter(s => todaySchedule.includes(s.discipline));
+  const otherReviews = pendingReviews.filter(s => !todaySchedule.includes(s.discipline));
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       <Header title="Painel de Controle" />
+      
+      {/* Alert Section */}
+      {urgentReviews.length > 0 && (
+        <div className="mb-10 bg-amber-50 dark:bg-amber-900/10 border-l-4 border-amber-500 p-6 rounded-2xl shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-amber-100 dark:bg-amber-900/30 rounded-xl text-amber-600 dark:text-amber-500">
+              <AlertTriangle size={24} />
+            </div>
+            <div className="flex-grow">
+              <h3 className="text-lg font-black text-amber-800 dark:text-amber-200 uppercase tracking-tight">Revisão Obrigatória Detectada</h3>
+              <p className="text-sm text-amber-700/80 dark:text-amber-400 font-bold mt-1">
+                Você tem matérias agendadas para hoje que possuem tópicos estudados anteriormente pendentes.
+              </p>
+              <div className="mt-4 space-y-2">
+                {urgentReviews.map(s => (
+                  <div key={s.id} className="flex items-center justify-between bg-white/60 dark:bg-black/20 p-3 rounded-xl">
+                    <div className="flex flex-col">
+                       <span className="text-xs font-black uppercase text-amber-600/70">{s.discipline}</span>
+                       <span className="font-bold text-sm text-slate-700 dark:text-slate-300">Revisar: {s.name}</span>
+                    </div>
+                    <button 
+                      onClick={() => markReviewComplete(s.id)}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <CheckCircle size={14} /> Feito
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
         <div className="glass p-8 rounded-[2rem] border border-white/20 shadow-sm">
           <Timer className="text-pcpr-blue mb-4" />
@@ -320,6 +366,27 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {otherReviews.length > 0 && (
+         <div className="mb-10">
+            <h3 className="text-lg font-black text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+               <ListChecks size={20} /> Outras Revisões Pendentes
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+               {otherReviews.slice(0, 6).map(s => (
+                  <div key={s.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                     <div>
+                        <p className="text-[10px] font-black uppercase text-slate-400">{s.discipline}</p>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300 line-clamp-1">{s.name}</p>
+                     </div>
+                     <button onClick={() => markReviewComplete(s.id)} className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-green-500 rounded-lg transition-colors">
+                        <Check size={16} />
+                     </button>
+                  </div>
+               ))}
+            </div>
+         </div>
+      )}
     </div>
   );
 };
@@ -328,7 +395,11 @@ const Pomodoro = () => {
   const { state, addTime } = useStudy();
   const [timeLeft, setTimeLeft] = useState(state.pomodoroConfig.focus * 60);
   const [isActive, setIsActive] = useState(false);
-  const [selectedSubj, setSelectedSubj] = useState(state.subjects[0]?.id || '');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [filterDiscipline, setFilterDiscipline] = useState<string>('all');
+
+  // Group subjects by discipline
+  const disciplines = Array.from(new Set(state.subjects.map(s => s.discipline)));
 
   useEffect(() => {
     let interval: any;
@@ -336,33 +407,93 @@ const Pomodoro = () => {
       interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
     } else if (timeLeft === 0) {
       setIsActive(false);
-      if (selectedSubj) addTime(selectedSubj, state.pomodoroConfig.focus * 60);
-      alert("Sessão finalizada!");
+      if (selectedIds.length > 0) {
+        addTime(selectedIds, state.pomodoroConfig.focus * 60);
+        alert("Sessão finalizada! O tempo foi computado e os assuntos marcados para revisão futura.");
+        setSelectedIds([]);
+        setTimeLeft(state.pomodoroConfig.focus * 60);
+      } else {
+        alert("Sessão finalizada, mas nenhum assunto estava selecionado.");
+      }
     }
     return () => clearInterval(interval);
-  }, [isActive, timeLeft]);
+  }, [isActive, timeLeft, selectedIds]);
+
+  const toggleSubject = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const filteredSubjects = filterDiscipline === 'all' 
+    ? state.subjects 
+    : state.subjects.filter(s => s.discipline === filterDiscipline);
 
   return (
-    <div className="max-w-3xl mx-auto animate-in zoom-in-95 duration-500 text-center">
-      <Header title="Foco Pomodoro" />
-      <div className="glass p-12 rounded-[3rem] shadow-2xl border border-white/20">
-        <div className="text-9xl font-black font-mono tracking-tighter mb-12 tabular-nums">
-          {Math.floor(timeLeft/60).toString().padStart(2,'0')}:{(timeLeft%60).toString().padStart(2,'0')}
-        </div>
-        <div className="flex justify-center gap-4">
-          <button onClick={() => setIsActive(!isActive)} className={`w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 ${isActive ? 'bg-amber-500 text-white' : 'bg-pcpr-blue text-white'}`}>
-            {isActive ? <Pause size={40} /> : <Play size={40} className="ml-2" />}
-          </button>
-          <button onClick={() => { setIsActive(false); setTimeLeft(state.pomodoroConfig.focus * 60); }} className="w-24 h-24 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-all hover:rotate-180">
-            <RotateCcw size={40} />
-          </button>
-        </div>
+    <div className="max-w-4xl mx-auto animate-in zoom-in-95 duration-500">
+      <div className="text-center mb-8">
+         <Header title="Foco Pomodoro" />
       </div>
-      <div className="mt-8 bg-white dark:bg-slate-900 p-8 rounded-[2.5rem]">
-        <label className="block text-xs font-black uppercase text-slate-400 mb-2">Matéria Vinculada</label>
-        <select value={selectedSubj} onChange={e => setSelectedSubj(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-pcpr-blue">
-          {state.subjects.map(s => <option key={s.id} value={s.id}>{s.name} ({s.discipline})</option>)}
-        </select>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+        {/* Timer Column */}
+        <div className="sticky top-4">
+           <div className="glass p-10 rounded-[3rem] shadow-2xl border border-white/20 text-center">
+             <div className="text-7xl xl:text-8xl font-black font-mono tracking-tighter mb-10 tabular-nums">
+               {Math.floor(timeLeft/60).toString().padStart(2,'0')}:{(timeLeft%60).toString().padStart(2,'0')}
+             </div>
+             <div className="flex justify-center gap-4">
+               <button onClick={() => setIsActive(!isActive)} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 ${isActive ? 'bg-amber-500 text-white' : 'bg-pcpr-blue text-white'}`}>
+                 {isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}
+               </button>
+               <button onClick={() => { setIsActive(false); setTimeLeft(state.pomodoroConfig.focus * 60); }} className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-all hover:rotate-180">
+                 <RotateCcw size={32} />
+               </button>
+             </div>
+             <p className="mt-8 text-xs font-bold text-slate-400">
+               {selectedIds.length} Assunto(s) Selecionado(s)
+             </p>
+           </div>
+        </div>
+
+        {/* Selection Column */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 h-[600px] flex flex-col">
+           <div className="mb-4">
+              <label className="block text-xs font-black uppercase text-slate-400 mb-2 px-2">Filtrar por Disciplina</label>
+              <div className="relative">
+                <Filter className="absolute left-3 top-3 text-slate-400" size={16} />
+                <select 
+                  value={filterDiscipline} 
+                  onChange={e => setFilterDiscipline(e.target.value)} 
+                  className="w-full bg-slate-50 dark:bg-slate-800 pl-10 p-3 rounded-2xl font-bold text-sm border-none outline-none focus:ring-2 focus:ring-pcpr-blue appearance-none"
+                >
+                  <option value="all">Todas as Matérias</option>
+                  {disciplines.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+           </div>
+
+           <div className="flex-grow overflow-y-auto custom-scrollbar space-y-2 pr-2">
+              {filteredSubjects.map(s => {
+                const isSelected = selectedIds.includes(s.id);
+                return (
+                  <div 
+                    key={s.id} 
+                    onClick={() => toggleSubject(s.id)}
+                    className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 group ${isSelected ? 'bg-pcpr-blue/5 border-pcpr-blue dark:bg-blue-900/20' : 'bg-transparent border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  >
+                    <div className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-pcpr-blue border-pcpr-blue' : 'border-slate-300 group-hover:border-pcpr-blue'}`}>
+                      {isSelected && <Check size={12} className="text-white" />}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-slate-400 mb-0.5">{s.discipline}</p>
+                      <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-pcpr-blue dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                        {s.name}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+           </div>
+        </div>
       </div>
     </div>
   );
@@ -411,6 +542,11 @@ const Edital = () => {
                              <div className="h-1 flex-grow bg-slate-100 rounded-full overflow-hidden">
                                 <div className="h-full bg-pcpr-blue transition-all" style={{width: `${s.relevance}%`}}></div>
                              </div>
+                             {s.needsReview && (
+                               <span className="bg-amber-100 text-amber-600 px-2 py-1 rounded-md text-[10px] font-bold uppercase flex items-center gap-1">
+                                 <AlertTriangle size={10} /> Revisar
+                               </span>
+                             )}
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
@@ -638,7 +774,7 @@ const App: React.FC = () => {
   const Router = isPreview ? HashRouter : BrowserRouter;
 
   const [state, setState] = useState<UserState>(() => {
-    const s = localStorage.getItem('pcpr_store_v7');
+    const s = localStorage.getItem('pcpr_store_v9');
     return s ? JSON.parse(s) : { 
       subjects: INITIAL_SUBJECTS, 
       schedule: CRONOGRAMA_PADRAO,
@@ -654,7 +790,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('pcpr_store_v7', JSON.stringify(state));
+    localStorage.setItem('pcpr_store_v9', JSON.stringify(state));
     if (state.theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [state]);
@@ -664,8 +800,33 @@ const App: React.FC = () => {
 
   const updateState = (up: Partial<UserState>) => setState(s => ({...s, ...up}));
 
-  const addTime = (id: string, sec: number) => {
-    setState(s => ({...s, subjects: s.subjects.map(sub => sub.id === id ? {...sub, timeSpent: sub.timeSpent + sec} : sub)}));
+  const addTime = (ids: string[], sec: number) => {
+    if (ids.length === 0) return;
+    const timePerSubject = Math.floor(sec / ids.length);
+    const now = new Date().toISOString();
+    
+    setState(s => ({
+      ...s,
+      subjects: s.subjects.map(sub => 
+        ids.includes(sub.id) 
+          ? { 
+              ...sub, 
+              timeSpent: sub.timeSpent + timePerSubject,
+              lastStudied: now,
+              needsReview: true 
+            } 
+          : sub
+      )
+    }));
+  };
+
+  const markReviewComplete = (id: string) => {
+    setState(s => ({
+      ...s,
+      subjects: s.subjects.map(sub => 
+        sub.id === id ? { ...sub, needsReview: false } : sub
+      )
+    }));
   };
 
   const addScheduleItem = (day: number, subject: string) => {
@@ -697,6 +858,7 @@ const App: React.FC = () => {
         state, 
         updateState,
         addTime,
+        markReviewComplete,
         addScheduleItem,
         removeScheduleItem,
         resetSchedule,
