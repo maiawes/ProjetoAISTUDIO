@@ -1,5 +1,7 @@
 {
-  "name": "Landing Page High-Performance Architecture",
-  "description": "A high-performance landing page boilerplate featuring a hybrid routing system for seamless transitions between cloud preview environments (IDX, Stackblitz) and production.",
-  "requestFramePermissions": []
+  "name": "PCPR Study Hub",
+  "description": "Plataforma avançada de gestão de estudos para a Polícia Civil do Paraná, com cronograma inteligente, Pomodoro e Edital Verticalizado.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }
