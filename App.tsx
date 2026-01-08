@@ -5,7 +5,8 @@ import {
   LayoutDashboard, Timer, BookOpen, Calendar, LogOut, Moon, Sun, 
   Gavel, Play, Pause, RotateCcw, Trash2, ExternalLink, ChevronRight,
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
-  X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter
+  X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter,
+  Coffee, Brain, Gamepad2
 } from 'lucide-react';
 import Sitemap from './components/Sitemap';
 
@@ -393,10 +394,18 @@ const Dashboard = () => {
 
 const Pomodoro = () => {
   const { state, addTime } = useStudy();
-  const [timeLeft, setTimeLeft] = useState(state.pomodoroConfig.focus * 60);
+  const [totalTime, setTotalTime] = useState(state.pomodoroConfig.focus * 60);
+  const [timeLeft, setTimeLeft] = useState(totalTime);
   const [isActive, setIsActive] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filterDiscipline, setFilterDiscipline] = useState<string>('all');
+
+  const PRESETS = [
+    { label: 'Pomodoro', min: 25, icon: <span className="text-lg">🍅</span> },
+    { label: 'Foco Profundo', min: 50, icon: <Brain size={18} className="text-pink-500" /> },
+    { label: 'Pausa Curta', min: 5, icon: <Coffee size={18} className="text-amber-500" /> },
+    { label: 'Pausa Longa', min: 15, icon: <Gamepad2 size={18} className="text-purple-500" /> },
+  ];
 
   // Group subjects by discipline
   const disciplines = Array.from(new Set(state.subjects.map(s => s.discipline)));
@@ -408,19 +417,27 @@ const Pomodoro = () => {
     } else if (timeLeft === 0) {
       setIsActive(false);
       if (selectedIds.length > 0) {
-        addTime(selectedIds, state.pomodoroConfig.focus * 60);
+        addTime(selectedIds, totalTime);
         alert("Sessão finalizada! O tempo foi computado e os assuntos marcados para revisão futura.");
         setSelectedIds([]);
-        setTimeLeft(state.pomodoroConfig.focus * 60);
+        setTimeLeft(totalTime);
       } else {
-        alert("Sessão finalizada, mas nenhum assunto estava selecionado.");
+        alert("Sessão finalizada, mas nenhum assunto estava selecionado (Pausa ou Esquecimento).");
+        setTimeLeft(totalTime);
       }
     }
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, selectedIds]);
+  }, [isActive, timeLeft, selectedIds, totalTime]);
 
   const toggleSubject = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handlePreset = (minutes: number) => {
+    const sec = minutes * 60;
+    setTotalTime(sec);
+    setTimeLeft(sec);
+    setIsActive(false);
   };
 
   const filteredSubjects = filterDiscipline === 'all' 
@@ -430,26 +447,42 @@ const Pomodoro = () => {
   return (
     <div className="max-w-4xl mx-auto animate-in zoom-in-95 duration-500">
       <div className="text-center mb-8">
-         <Header title="Foco Pomodoro" />
+         <Header title="Foco Pomodoro 🍅" />
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         {/* Timer Column */}
         <div className="sticky top-4">
-           <div className="glass p-10 rounded-[3rem] shadow-2xl border border-white/20 text-center">
-             <div className="text-7xl xl:text-8xl font-black font-mono tracking-tighter mb-10 tabular-nums">
+           <div className="glass p-10 rounded-[3rem] shadow-2xl border border-white/20 text-center relative overflow-hidden">
+             
+             {/* Presets Row */}
+             <div className="flex justify-center gap-3 mb-8 flex-wrap">
+               {PRESETS.map((p, i) => (
+                 <button 
+                   key={i} 
+                   onClick={() => handlePreset(p.min)}
+                   className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${totalTime === p.min * 60 ? 'bg-white dark:bg-slate-700 shadow-md border-transparent scale-105' : 'bg-transparent border-slate-200 dark:border-slate-700 hover:bg-white/50 dark:hover:bg-slate-800'}`}
+                 >
+                   {p.icon} {p.label}
+                 </button>
+               ))}
+             </div>
+
+             <div className="text-7xl xl:text-8xl font-black font-mono tracking-tighter mb-10 tabular-nums text-slate-800 dark:text-slate-100">
                {Math.floor(timeLeft/60).toString().padStart(2,'0')}:{(timeLeft%60).toString().padStart(2,'0')}
              </div>
+             
              <div className="flex justify-center gap-4">
                <button onClick={() => setIsActive(!isActive)} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 ${isActive ? 'bg-amber-500 text-white' : 'bg-pcpr-blue text-white'}`}>
                  {isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}
                </button>
-               <button onClick={() => { setIsActive(false); setTimeLeft(state.pomodoroConfig.focus * 60); }} className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-all hover:rotate-180">
+               <button onClick={() => { setIsActive(false); setTimeLeft(totalTime); }} className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-all hover:rotate-180">
                  <RotateCcw size={32} />
                </button>
              </div>
+             
              <p className="mt-8 text-xs font-bold text-slate-400">
-               {selectedIds.length} Assunto(s) Selecionado(s)
+               {selectedIds.length} Assunto(s) Selecionado(s) para Computar
              </p>
            </div>
         </div>
