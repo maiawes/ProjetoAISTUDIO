@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Timer, BookOpen, Calendar, LogOut, Moon, Sun, 
   Gavel, Play, Pause, RotateCcw, Trash2, ExternalLink, ChevronRight,
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
-  X, RefreshCw
+  X, RefreshCw, Zap, Settings2, Check, Scale, Globe
 } from 'lucide-react';
 import Sitemap from './components/Sitemap';
 
@@ -16,7 +16,8 @@ interface Subject {
   name: string;
   relevance: number;
   timeSpent: number;
-  link?: string;
+  questionLink?: string;
+  jurisprudencia?: string;
 }
 
 interface UserState {
@@ -30,6 +31,37 @@ interface AuthUser {
   uid: string;
   email: string;
 }
+
+// --- Jurisprudência Mapping Data ---
+const JURIS_DB: Record<string, string> = {
+  "Língua Portuguesa": "Tribunais: Matéria eminentemente gramatical e interpretativa. Jurisprudência rara, foco em anulação de questões por ambiguidade.",
+  "Inviolabilidade do domicílio": "STF: Entrada forçada somente é lícita quando houver fundadas razões, devidamente justificadas a posteriori (Tema 280).",
+  "Direito à intimidade vs. interesse público": "STF: Divulgação de fatos de interesse público não gera dano moral automático (Tema 786).",
+  "Direito de reunião": "STF: Independe de autorização, mas exige prévio aviso à autoridade competente.",
+  "Liberdade de expressão": "STF: Não é absoluta; não protege discurso de ódio nem apologia ao crime.",
+  "Segurança Pública": "STF: Polícia Civil exerce função de polícia judiciária, não podendo ser esvaziada por outros órgãos.\nSTF: Guardas Municipais não têm atribuição investigativa ampla, apenas proteção de bens e serviços.",
+  "Direitos Políticos": "STF: Condenação criminal transitada em julgado → suspensão dos direitos políticos automática (art. 15, III, CF).",
+  "Princípios da Administração Pública": "STF/STJ: Princípio da legalidade estrita para a Administração.\nSTF: Violação aos princípios do art. 37 pode configurar improbidade, mesmo sem dano ao erário (antes da reforma).",
+  "Agentes públicos": "STF: Acumulação ilícita de cargos → devolução dos valores somente se comprovada má-fé.\nSTF: Estágio probatório não dispensa contraditório e ampla defesa para exoneração.",
+  "Poder de polícia": "STJ: Poder de polícia é indelegável a pessoas jurídicas de direito privado, salvo atos materiais.\nSTF: Multas administrativas não podem ter caráter confiscatório.",
+  "Responsabilidade civil do Estado": "STF (Tema 940): Responsabilidade objetiva do Estado; Direito de regresso contra o agente com dolo ou culpa.\nSTF: Omissão do Estado → responsabilidade subjetiva (necessidade de prova de culpa).",
+  "Infração penal": "STF/STJ: Crime exige tipicidade + ilicitude + culpabilidade.\nSTF: Princípio da insignificância exige mínima ofensividade, nenhuma periculosidade social, reduzido grau de reprovabilidade e inexpressividade da lesão.",
+  "Erro de tipo e erro de proibição": "STJ: Erro de tipo exclui dolo, podendo gerar culpa.\nSTF: Erro de proibição inevitável exclui culpabilidade; evitável → redução de pena.",
+  "Concurso de pessoas": "STJ: Participação de menor importância → redução obrigatória de pena.\nSTF: Teoria do domínio do fato aplicada com cautela (não é automática).",
+  "Crimes contra a administração pública": "STF: Crime de corrupção passiva independe do efetivo recebimento da vantagem.\nSTJ: Crime de peculato admite forma culposa.",
+  "Inquérito policial": "STF: Inquérito é procedimento administrativo, inquisitivo e dispensável; não há contraditório pleno.",
+  "Prova": "STF: Prova ilícita é inadmissível, salvo fonte independente.\nSTF: Cadeia de custódia é requisito de validade da prova.",
+  "Prisão em flagrante": "STF: Flagrante não exige mandado.\nSTJ: Flagrante preparado → crime impossível.",
+  "Prisão preventiva": "STF/STJ: Exige fundamentação concreta; gravidade abstrata não basta.\nSTF: Audiência de custódia é obrigatória.",
+  "Prisão temporária": "STF: Somente para crimes expressamente previstos em lei.\nSTJ: Prazo é taxativo.",
+  "Tráfico ilícito": "STF: Usuário não comete crime hediondo.\nSTF (Tema 712): Tráfico privilegiado não é hediondo.",
+  "Crimes hediondos": "STF: Regime inicial não é automaticamente fechado; progressão deve observar individualização.",
+  "Abuso de Autoridade": "STF: Exige dolo específico (finalidade de prejudicar, beneficiar ou agir por capricho).\nSTJ: Erro de interpretação razoável não configura crime.",
+  "Estatuto do desarmamento": "STF: Porte ilegal é crime de perigo abstrato.\nSTJ: Numeração raspada → crime autônomo.",
+  "Interceptação telefônica": "STF: Decisão judicial fundamentada, prazo de 15 dias prorrogável.\nSTJ: Prova emprestada é válida se houver contraditório.",
+  "Pacote Anti-Crime": "STF: Juiz das garantias válido; ANPP retroage se mais benéfico.",
+  "Estrutura do Executivo PR": "STF: Regime estatutário não afasta princípios constitucionais.\nSTJ: PAD exige contraditório e ampla defesa.\nSTF: Sanções administrativas não afastam responsabilidade penal."
+};
 
 // --- PCPR Official Content Data ---
 const DISCIPLINE_DATA = [
@@ -123,13 +155,23 @@ const DISCIPLINE_DATA = [
   }
 ];
 
+const getInitialJuris = (discipline: string, topic: string) => {
+  const match = Object.keys(JURIS_DB).find(key => 
+    topic.toLowerCase().includes(key.toLowerCase()) || 
+    discipline.toLowerCase().includes(key.toLowerCase())
+  );
+  return match ? JURIS_DB[match] : "";
+};
+
 const INITIAL_SUBJECTS: Subject[] = DISCIPLINE_DATA.flatMap(m => 
   m.assuntos.map((name, i) => ({
     id: `${m.materia.toLowerCase().replace(/\s+/g, '-')}-${i}`,
     discipline: m.materia,
     name,
     relevance: 75,
-    timeSpent: 0
+    timeSpent: 0,
+    questionLink: "",
+    jurisprudencia: getInitialJuris(m.materia, name)
   }))
 );
 
@@ -158,6 +200,8 @@ const StudyContext = createContext<{
   addScheduleItem: (day: number, subject: string) => void;
   removeScheduleItem: (day: number, subject: string) => void;
   resetSchedule: () => void;
+  bulkUpdateSchedule: (newSchedule: Record<number, string[]>) => void;
+  updateSubjectData: (id: string, data: Partial<Subject>) => void;
 } | null>(null);
 
 const useAuth = () => useContext(AuthContext)!;
@@ -171,7 +215,7 @@ const checkPreviewEnvironment = (): boolean => {
   return ['googleusercontent', 'webcontainer', 'shim', '.goog', 'scf.usercontent', 'stackblitz', 'codesandbox'].some(i => h.includes(i) || r.includes(i));
 };
 
-// --- View Components ---
+// --- UI Components ---
 
 const Sidebar = () => {
   const { pathname } = useLocation();
@@ -223,12 +267,12 @@ const Header = ({ title }: { title: string }) => {
     <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
       <div>
         <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">{title}</h1>
-        <p className="text-slate-500 text-sm mt-1">Sua jornada rumo à aprovação na Polícia Civil.</p>
+        <p className="text-slate-500 text-sm mt-1 font-bold">Investigador PCPR Alpha 2025</p>
       </div>
       <div className="flex items-center space-x-4">
         <div className="hidden sm:block text-right">
           <p className="text-sm font-bold">{user?.email}</p>
-          <p className="text-xs text-pcpr-gold font-bold uppercase tracking-widest">Investigador de Elite</p>
+          <p className="text-xs text-pcpr-gold font-bold uppercase tracking-widest">Candidato Elite</p>
         </div>
         <div className="w-12 h-12 rounded-2xl bg-pcpr-blue flex items-center justify-center shadow-lg">
           <User size={24} className="text-white" />
@@ -238,11 +282,15 @@ const Header = ({ title }: { title: string }) => {
   );
 };
 
+// --- Views ---
+
 const Dashboard = () => {
   const { state } = useStudy();
   const totalSeconds = state.subjects.reduce((a, b) => a + b.timeSpent, 0);
-  const todayIndex = new Date().getDay();
+  const now = new Date();
+  const todayIndex = now.getDay();
   const days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+  const formattedDate = now.toLocaleDateString('pt-BR');
   const todaySchedule = state.schedule[todayIndex] || [];
 
   return (
@@ -261,45 +309,15 @@ const Dashboard = () => {
         </div>
         <div className="glass p-8 rounded-[2rem] border border-white/20 shadow-sm bg-pcpr-blue text-white col-span-1 md:col-span-2">
           <Calendar className="text-white/70 mb-4" />
-          <p className="text-white/70 text-xs font-bold uppercase tracking-widest">Hoje: {days[todayIndex]}</p>
+          <p className="text-white/70 text-xs font-bold uppercase tracking-widest">Hoje: {days[todayIndex]}, {formattedDate}</p>
           <div className="flex flex-wrap gap-2 mt-4">
             {todaySchedule.map((subj, idx) => (
               <span key={idx} className="px-4 py-2 bg-white/10 rounded-xl text-sm font-bold border border-white/10">
                 {subj}
               </span>
             ))}
-            {todaySchedule.length === 0 && <span className="text-white/50 italic font-medium">Nenhuma matéria escalada.</span>}
+            {todaySchedule.length === 0 && <span className="text-white/50 italic font-medium">Livre.</span>}
           </div>
-        </div>
-      </div>
-      
-      <div className="grid lg:grid-cols-2 gap-8">
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-slate-800">
-          <h3 className="text-xl font-bold mb-6 flex items-center gap-2"><PlusCircle size={20} className="text-pcpr-blue"/> Foco do Dia</h3>
-          <div className="space-y-4">
-            {state.subjects.filter(s => s.relevance >= 90).slice(0, 4).map(subj => (
-              <div key={subj.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-800">
-                <div>
-                  <p className="font-bold text-sm">{subj.name}</p>
-                  <p className="text-[10px] text-slate-500 uppercase font-black">{subj.discipline}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                  <span className="text-[10px] font-black uppercase text-slate-400">Prioridade</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        <div className="bg-pcpr-blue p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden flex flex-col justify-center">
-          <h3 className="text-lg font-bold opacity-80 mb-2">Meta Semanal</h3>
-          <p className="text-3xl font-black leading-tight mb-4">Mantenha a constância.</p>
-          <p className="text-sm opacity-70 mb-8">A aprovação é o resultado de pequenos hábitos diários repetidos com excelência.</p>
-          <Link to="/schedule" className="w-fit px-6 py-3 bg-white text-pcpr-blue font-black rounded-xl text-sm uppercase hover:scale-105 transition-transform">
-            Ver Cronograma Completo
-          </Link>
-          <Gavel className="absolute -right-8 -bottom-8 text-white/10" size={240} />
         </div>
       </div>
     </div>
@@ -319,18 +337,15 @@ const Pomodoro = () => {
     } else if (timeLeft === 0) {
       setIsActive(false);
       if (selectedSubj) addTime(selectedSubj, state.pomodoroConfig.focus * 60);
-      alert("Bloco de estudo concluído!");
+      alert("Sessão finalizada!");
     }
     return () => clearInterval(interval);
   }, [isActive, timeLeft]);
 
   return (
     <div className="max-w-3xl mx-auto animate-in zoom-in-95 duration-500 text-center">
-      <Header title="Timer de Estudos" />
-      <div className="glass p-12 rounded-[3rem] shadow-2xl border border-white/20 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-100 dark:bg-slate-800">
-           <div className="h-full bg-pcpr-blue transition-all duration-1000" style={{ width: `${(timeLeft / (state.pomodoroConfig.focus * 60)) * 100}%` }}></div>
-        </div>
+      <Header title="Foco Pomodoro" />
+      <div className="glass p-12 rounded-[3rem] shadow-2xl border border-white/20">
         <div className="text-9xl font-black font-mono tracking-tighter mb-12 tabular-nums">
           {Math.floor(timeLeft/60).toString().padStart(2,'0')}:{(timeLeft%60).toString().padStart(2,'0')}
         </div>
@@ -343,8 +358,8 @@ const Pomodoro = () => {
           </button>
         </div>
       </div>
-      <div className="mt-8 bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800">
-        <label className="block text-xs font-black uppercase text-slate-400 mb-2">Vincular Estudo a:</label>
+      <div className="mt-8 bg-white dark:bg-slate-900 p-8 rounded-[2.5rem]">
+        <label className="block text-xs font-black uppercase text-slate-400 mb-2">Matéria Vinculada</label>
         <select value={selectedSubj} onChange={e => setSelectedSubj(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-pcpr-blue">
           {state.subjects.map(s => <option key={s.id} value={s.id}>{s.name} ({s.discipline})</option>)}
         </select>
@@ -354,9 +369,9 @@ const Pomodoro = () => {
 };
 
 const Edital = () => {
-  const { state, updateState } = useStudy();
-  // Initially minimized as per request
+  const { state, updateSubjectData } = useStudy();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [modalJuris, setModalJuris] = useState<{title: string, content: string} | null>(null);
 
   const disciplines = Array.from(new Set(state.subjects.map(s => s.discipline)));
 
@@ -375,36 +390,67 @@ const Edital = () => {
             <div key={disc} className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 overflow-hidden shadow-sm">
               <button 
                 onClick={() => toggleDiscipline(disc)}
-                className="w-full p-6 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="w-full p-6 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 transition-colors"
               >
                 <div className="text-left">
                   <h3 className="font-black text-pcpr-blue dark:text-blue-400 uppercase tracking-widest text-sm">{disc}</h3>
-                  <p className="text-xs text-slate-400 font-bold">{topics.length} Assuntos</p>
+                  <p className="text-xs text-slate-400 font-bold">{topics.length} Tópicos</p>
                 </div>
                 {isExpanded ? <ChevronDown /> : <ChevronRight />}
               </button>
               
               {isExpanded && (
-                <div className="divide-y divide-slate-100 dark:divide-slate-800 animate-in slide-in-from-top-2 duration-300">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {topics.map(s => (
-                    <div key={s.id} className="p-6 flex flex-wrap items-center justify-between gap-4">
-                      <div className="flex-grow min-w-[300px]">
-                        <h4 className="font-bold text-slate-800 dark:text-slate-200">{s.name}</h4>
-                        <div className="flex items-center gap-4 mt-2">
-                          <input 
-                            type="range" min="0" max="100" value={s.relevance}
-                            onChange={e => updateState({ subjects: state.subjects.map(sub => sub.id === s.id ? {...sub, relevance: parseInt(e.target.value)} : sub) })}
-                            className="h-1.5 w-32 bg-slate-200 rounded-full accent-pcpr-blue appearance-none cursor-pointer"
-                          />
-                          <span className={`text-[10px] font-black uppercase ${s.relevance >= 90 ? 'text-red-500' : 'text-slate-400'}`}>Relevância {s.relevance}%</span>
+                    <div key={s.id} className="p-8">
+                      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-6">
+                        <div className="flex-grow">
+                          <h4 className="font-bold text-lg text-slate-800 dark:text-slate-200">{s.name}</h4>
+                          <div className="flex items-center gap-4 mt-2">
+                             <span className="text-[10px] font-black uppercase text-slate-400">Relevância {s.relevance}%</span>
+                             <div className="h-1 flex-grow bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-pcpr-blue transition-all" style={{width: `${s.relevance}%`}}></div>
+                             </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3">
+                           <button 
+                             onClick={() => setModalJuris({title: s.name, content: s.jurisprudencia || "Nenhuma decisão cadastrada para este tema."})}
+                             className="flex items-center gap-2 px-6 py-3 bg-pcpr-gold text-white rounded-xl font-black text-[10px] uppercase shadow-lg shadow-yellow-500/20 hover:scale-105 transition-all"
+                           >
+                             <Scale size={14} /> Tribunais
+                           </button>
+                           <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-center">
+                             <p className="text-[10px] font-black text-slate-400 uppercase">Horas</p>
+                             <p className="font-bold text-xs">{Math.floor(s.timeSpent/3600)}h</p>
+                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-center">
-                          <p className="text-[10px] font-black text-slate-400 uppercase">Estudado</p>
-                          <p className="font-bold text-xs">{Math.floor(s.timeSpent/3600)}h {Math.floor((s.timeSpent%3600)/60)}m</p>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="relative group">
+                          <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Link de Questões</label>
+                          <div className="flex items-center bg-slate-50 dark:bg-slate-800 p-1 rounded-xl border border-slate-100 dark:border-slate-700">
+                             <div className="p-2 text-slate-400"><Globe size={16}/></div>
+                             <input 
+                               type="text" 
+                               placeholder="Ex: https://questoes.com/..."
+                               value={s.questionLink || ""}
+                               onChange={e => updateSubjectData(s.id, {questionLink: e.target.value})}
+                               className="flex-grow bg-transparent p-2 outline-none font-medium text-xs text-slate-600 dark:text-slate-300"
+                             />
+                             {s.questionLink && (
+                               <a href={s.questionLink} target="_blank" rel="noreferrer" className="p-2 bg-white dark:bg-slate-700 rounded-lg text-pcpr-blue hover:scale-110 transition-all">
+                                 <ExternalLink size={16} />
+                               </a>
+                             )}
+                          </div>
                         </div>
-                        <button className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                        <div className="flex items-end gap-2">
+                           <button className="flex-grow py-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-xs text-slate-500 hover:text-pcpr-blue transition-colors">
+                             Marcar como Concluído
+                           </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -414,40 +460,98 @@ const Edital = () => {
           );
         })}
       </div>
+
+      {/* Jurisprudencia Modal */}
+      {modalJuris && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] w-full max-w-2xl shadow-2xl border border-white/10 max-h-[80vh] overflow-y-auto relative">
+             <button onClick={() => setModalJuris(null)} className="absolute top-8 right-8 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"><X/></button>
+             <div className="flex items-center gap-4 mb-8">
+                <div className="w-16 h-16 bg-pcpr-gold/10 rounded-2xl flex items-center justify-center text-pcpr-gold">
+                  <Scale size={32} />
+                </div>
+                <div>
+                   <h3 className="text-xl font-black tracking-tight">{modalJuris.title}</h3>
+                   <p className="text-[10px] font-black text-pcpr-gold uppercase tracking-widest">Decisões STF / STJ</p>
+                </div>
+             </div>
+             <div className="space-y-4 text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+                {modalJuris.content.split('\n').map((line, i) => (
+                  <p key={i} className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border-l-4 border-pcpr-gold">
+                    {line}
+                  </p>
+                ))}
+             </div>
+             <div className="mt-10 pt-6 border-t border-slate-100 dark:border-slate-800">
+                <p className="text-[10px] font-black text-slate-400 uppercase text-center italic">Hub atualizado com informativos 2024/2025</p>
+             </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 const Schedule = () => {
-  const { state, addScheduleItem, removeScheduleItem, resetSchedule } = useStudy();
+  const { state, addScheduleItem, removeScheduleItem, resetSchedule, bulkUpdateSchedule } = useStudy();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCycleModalOpen, setIsCycleModalOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState(1);
   const [selectedSubject, setSelectedSubject] = useState(DISCIPLINE_DATA[0].materia);
 
+  const [cycleDisciplines, setCycleDisciplines] = useState<string[]>([]);
+  const [cycleDays, setCycleDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [subjectsPerDay, setSubjectsPerDay] = useState(2);
+
   const days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-  const currentDayIndex = new Date().getDay();
+  const now = new Date();
+  const currentDayIndex = now.getDay();
+  const formattedDate = now.toLocaleDateString('pt-BR');
 
   const handleAdd = () => {
     addScheduleItem(selectedDay, selectedSubject);
     setIsModalOpen(false);
   };
 
+  const generateCycle = () => {
+    if (cycleDisciplines.length === 0 || cycleDays.length === 0) return;
+    const sortedDays = [...cycleDays].sort((a, b) => a - b);
+    const newSchedule = { ...state.schedule };
+    sortedDays.forEach(d => { newSchedule[d] = []; });
+    let disciplineIdx = 0;
+    sortedDays.forEach(dayIdx => {
+      const items = [];
+      for (let i = 0; i < subjectsPerDay; i++) {
+        items.push(cycleDisciplines[disciplineIdx % cycleDisciplines.length]);
+        disciplineIdx++;
+      }
+      newSchedule[dayIdx] = items;
+    });
+    bulkUpdateSchedule(newSchedule);
+    setIsCycleModalOpen(false);
+  };
+
   return (
     <div className="animate-in fade-in duration-500">
-      <div className="flex justify-between items-center mb-10">
-        <Header title="Cronograma Semanal" />
-        <div className="flex gap-2">
+      <div className="flex flex-col xl:flex-row justify-between xl:items-center gap-4 mb-10">
+        <Header title="Cronograma Hub" />
+        <div className="flex flex-wrap gap-2">
            <button onClick={resetSchedule} className="flex items-center gap-2 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-2xl font-black text-[10px] uppercase hover:bg-slate-200 transition-colors">
-             <RefreshCw size={14} /> Resetar Padrão
+             <RefreshCw size={14} /> Resetar
            </button>
-           <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-6 py-3 bg-pcpr-blue text-white rounded-2xl font-black text-[10px] uppercase hover:scale-105 transition-all shadow-lg">
-             <Plus size={14} /> Escalar Matéria
+           <button onClick={() => setIsCycleModalOpen(true)} className="flex items-center gap-2 px-6 py-3 bg-pcpr-gold text-white rounded-2xl font-black text-[10px] uppercase hover:scale-105 transition-all shadow-lg shadow-yellow-500/20">
+             <Zap size={14} /> Gerar Ciclo
+           </button>
+           <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-6 py-3 bg-pcpr-blue text-white rounded-2xl font-black text-[10px] uppercase hover:scale-105 transition-all shadow-lg shadow-blue-500/20">
+             <Plus size={14} /> Escalar Manual
            </button>
         </div>
       </div>
 
-      <div className="mb-6 px-6 py-3 bg-pcpr-blue/10 text-pcpr-blue rounded-2xl inline-block font-black uppercase text-[10px] tracking-widest border border-pcpr-blue/20">
-        Hoje é: {days[currentDayIndex]}
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        <div className="px-6 py-3 bg-pcpr-blue/10 text-pcpr-blue rounded-2xl inline-block font-black uppercase text-[10px] tracking-widest border border-pcpr-blue/20">
+          Hoje é: {days[currentDayIndex]}, {formattedDate}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
@@ -455,87 +559,45 @@ const Schedule = () => {
           const isToday = idx === currentDayIndex;
           const isSaturday = idx === 6;
           const isSunday = idx === 0;
-          
-          let cardStyle = "bg-white border-slate-100 dark:bg-slate-900 dark:border-slate-800";
-          let badgeStyle = "bg-slate-100 text-slate-500";
-          
-          if (isToday) cardStyle = "bg-white border-pcpr-blue ring-4 ring-pcpr-blue/10 dark:bg-slate-900 dark:border-pcpr-blue";
-          if (isSaturday) { cardStyle = "bg-blue-50/50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-800"; badgeStyle = "bg-blue-100 text-blue-600"; }
-          if (isSunday) { cardStyle = "bg-red-50/50 border-red-200 dark:bg-red-900/10 dark:border-red-800"; badgeStyle = "bg-red-100 text-red-600"; }
-
+          let cardStyle = isToday ? "bg-white border-pcpr-blue ring-4 ring-pcpr-blue/10 dark:bg-slate-900" : "bg-white border-slate-100 dark:bg-slate-900 dark:border-slate-800";
           return (
-            <div key={idx} className={`p-5 rounded-[2.5rem] border min-h-[350px] flex flex-col shadow-sm transition-all duration-300 ${cardStyle}`}>
-              <div className="flex justify-between items-center mb-6">
-                <span className={`text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full ${badgeStyle}`}>
-                  {day}
-                </span>
-                {isToday && <div className="w-2 h-2 bg-pcpr-blue rounded-full animate-ping" />}
-              </div>
-              
+            <div key={idx} className={`p-6 rounded-[2.5rem] border min-h-[400px] flex flex-col shadow-sm transition-all duration-300 ${cardStyle}`}>
+              <span className={`text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full mb-6 inline-block w-fit ${isSaturday ? 'bg-blue-100 text-blue-600' : isSunday ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+                {day}
+              </span>
               <div className="flex-grow space-y-3">
                 {(state.schedule[idx] || []).map((subj, sIdx) => (
-                  <div key={sIdx} className="group relative flex items-center justify-between p-4 bg-white/60 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 rounded-2xl text-[11px] font-bold transition-all hover:translate-x-1 hover:shadow-sm">
+                  <div key={sIdx} className="group relative flex items-center justify-between p-4 bg-white/60 dark:bg-slate-800/50 border border-slate-200/50 rounded-2xl text-[11px] font-bold">
                     <span className="truncate pr-4">{subj}</span>
-                    <button 
-                      onClick={() => removeScheduleItem(idx, subj)}
-                      className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
-                    >
-                      <X size={14} />
-                    </button>
+                    <button onClick={() => removeScheduleItem(idx, subj)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all"><X size={14} /></button>
                   </div>
                 ))}
-                {(state.schedule[idx] || []).length === 0 && (
-                   <div className="h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 mt-10">
-                     <Calendar size={24} className="mb-2 opacity-20" />
-                     <p className="text-[10px] font-bold uppercase italic opacity-30">Vazio</p>
-                   </div>
-                )}
-              </div>
-              
-              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-center">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
-                  {isSunday ? "Descanso / Leve" : isSaturday ? "Revisão / Simulados" : "Estudo Teórico"}
-                </p>
               </div>
             </div>
           );
         })}
       </div>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
-           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] w-full max-w-md shadow-2xl border border-white/10">
+      {isCycleModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200 overflow-y-auto">
+           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] w-full max-w-2xl shadow-2xl border border-white/10 my-8">
               <div className="flex justify-between items-center mb-8">
-                <h3 className="text-2xl font-black tracking-tight">Escalar Matéria</h3>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X /></button>
+                <h3 className="text-2xl font-black tracking-tight">Gerador de Ciclo Automático</h3>
+                <button onClick={() => setIsCycleModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X /></button>
               </div>
-              <div className="space-y-6">
+              <div className="space-y-8">
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Dia da Semana</label>
-                  <select 
-                    value={selectedDay}
-                    onChange={e => setSelectedDay(parseInt(e.target.value))}
-                    className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-pcpr-blue"
-                  >
-                    {days.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                  </select>
+                  <label className="block text-[11px] font-black uppercase text-slate-400 mb-4 tracking-widest">1. Selecione Matérias</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {DISCIPLINE_DATA.map(d => (
+                      <button key={d.materia} onClick={() => setCycleDisciplines(prev => prev.includes(d.materia) ? prev.filter(x => x !== d.materia) : [...prev, d.materia])} className={`p-3 rounded-2xl text-[10px] font-bold text-left border ${cycleDisciplines.includes(d.materia) ? 'bg-pcpr-blue text-white' : 'bg-slate-50 dark:bg-slate-800'}`}>
+                        {d.materia}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">Matéria / Atividade</label>
-                  <select 
-                    value={selectedSubject}
-                    onChange={e => setSelectedSubject(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold border-none outline-none focus:ring-2 focus:ring-pcpr-blue"
-                  >
-                    {DISCIPLINE_DATA.map(d => <option key={d.materia} value={d.materia}>{d.materia}</option>)}
-                    <option value="Revisão">Revisão</option>
-                    <option value="Simulado Completo">Simulado Completo</option>
-                    <option value="Descanso Ativo">Descanso Ativo</option>
-                    <option value="Jurisprudência STF/STJ">Jurisprudência STF/STJ</option>
-                  </select>
-                </div>
-                <button onClick={handleAdd} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-sm uppercase shadow-xl hover:scale-105 active:scale-95 transition-all">
-                  Confirmar Escala
+                <button onClick={generateCycle} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-sm uppercase shadow-xl hover:scale-105 active:scale-95 transition-all">
+                  Aplicar Ciclo Inteligente
                 </button>
               </div>
            </div>
@@ -549,19 +611,16 @@ const AuthScreen = () => {
   const [email, setEmail] = useState('');
   const { login } = useAuth();
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-96 h-96 bg-pcpr-blue/20 rounded-full blur-[100px]"></div>
-      <div className="w-full max-w-md bg-white p-10 rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-500">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-pcpr-blue mx-auto rounded-3xl flex items-center justify-center text-white mb-6 shadow-xl shadow-blue-500/20">
-            <Gavel size={40} />
-          </div>
-          <h1 className="text-3xl font-black uppercase tracking-tighter">Login Candidato</h1>
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden text-center">
+      <div className="w-full max-w-md bg-white p-10 rounded-[3rem] shadow-2xl relative z-10 animate-in zoom-in-95 duration-500">
+        <div className="w-20 h-20 bg-pcpr-blue mx-auto rounded-3xl flex items-center justify-center text-white mb-6 shadow-xl shadow-blue-500/20">
+          <Gavel size={40} />
         </div>
+        <h1 className="text-3xl font-black uppercase tracking-tighter">Login Candidato</h1>
+        <p className="text-slate-400 text-sm font-bold mt-2 mb-8">Hub de Estudos PCPR 2025</p>
         <div className="space-y-4">
-          <input type="email" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border-none outline-none font-bold" />
-          <input type="password" placeholder="Senha" className="w-full bg-slate-50 p-4 rounded-2xl border-none outline-none font-bold" />
-          <button onClick={() => login(email)} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-blue-500/30 transition-transform active:scale-95">Acessar Hub</button>
+          <input type="email" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border-none outline-none font-bold focus:ring-2 focus:ring-pcpr-blue" />
+          <button onClick={() => login(email)} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-[1.02] active:scale-95 transition-all">Entrar no Hub</button>
         </div>
       </div>
     </div>
@@ -577,7 +636,7 @@ const App: React.FC = () => {
   const Router = isPreview ? HashRouter : BrowserRouter;
 
   const [state, setState] = useState<UserState>(() => {
-    const s = localStorage.getItem('pcpr_store_v5');
+    const s = localStorage.getItem('pcpr_store_v7');
     return s ? JSON.parse(s) : { 
       subjects: INITIAL_SUBJECTS, 
       schedule: CRONOGRAMA_PADRAO,
@@ -593,7 +652,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('pcpr_store_v5', JSON.stringify(state));
+    localStorage.setItem('pcpr_store_v7', JSON.stringify(state));
     if (state.theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [state]);
@@ -611,22 +670,20 @@ const App: React.FC = () => {
     setState(s => {
       const daySchedule = s.schedule[day] || [];
       if (daySchedule.includes(subject)) return s;
-      return {
-        ...s,
-        schedule: { ...s.schedule, [day]: [...daySchedule, subject] }
-      };
+      return { ...s, schedule: { ...s.schedule, [day]: [...daySchedule, subject] } };
     });
   };
 
   const removeScheduleItem = (day: number, subject: string) => {
-    setState(s => ({
-      ...s,
-      schedule: { ...s.schedule, [day]: (s.schedule[day] || []).filter(item => item !== subject) }
-    }));
+    setState(s => ({ ...s, schedule: { ...s.schedule, [day]: (s.schedule[day] || []).filter(item => item !== subject) } }));
   };
 
-  const resetSchedule = () => {
-    setState(s => ({ ...s, schedule: CRONOGRAMA_PADRAO }));
+  const resetSchedule = () => setState(s => ({ ...s, schedule: CRONOGRAMA_PADRAO }));
+
+  const bulkUpdateSchedule = (newSchedule: Record<number, string[]>) => setState(s => ({ ...s, schedule: newSchedule }));
+
+  const updateSubjectData = (id: string, data: Partial<Subject>) => {
+    setState(s => ({...s, subjects: s.subjects.map(subj => subj.id === id ? {...subj, ...data} : subj)}));
   };
 
   if (loading) return null;
@@ -640,7 +697,9 @@ const App: React.FC = () => {
         addTime,
         addScheduleItem,
         removeScheduleItem,
-        resetSchedule
+        resetSchedule,
+        bulkUpdateSchedule,
+        updateSubjectData
       }}>
         <Router>
           <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-500">
