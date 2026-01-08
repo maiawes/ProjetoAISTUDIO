@@ -6,11 +6,11 @@ import {
   Gavel, Play, Pause, RotateCcw, Trash2, ExternalLink, ChevronRight,
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
   X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter,
-  Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff
+  Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff, Cloud, CloudOff, CloudUpload
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, enableIndexedDbPersistence } from 'firebase/firestore';
 import Sitemap from './components/Sitemap';
 
 // --- Firebase Configuration ---
@@ -36,6 +36,15 @@ if (isFirebaseConfigured) {
     const app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
+    
+    // Enable Offline Persistence
+    enableIndexedDbPersistence(db).catch((err) => {
+      if (err.code == 'failed-precondition') {
+          console.log('Persistence failed: multiple tabs open');
+      } else if (err.code == 'unimplemented') {
+          console.log('Persistence not supported by browser');
+      }
+    });
   } catch (e) {
     console.warn("Firebase initialization failed:", e);
   }
@@ -50,7 +59,7 @@ interface Subject {
   timeSpent: number;
   questionLink?: string;
   jurisprudencia?: string;
-  lastStudied?: string; // ISO Date string
+  lastStudied?: string | null; // Changed to allow null for Firestore compatibility
   needsReview?: boolean;
 }
 
@@ -207,7 +216,7 @@ const INITIAL_SUBJECTS: Subject[] = DISCIPLINE_DATA.flatMap(m =>
     questionLink: "",
     jurisprudencia: getInitialJuris(m.materia, name),
     needsReview: false,
-    lastStudied: undefined
+    lastStudied: null // Fixed: Use null instead of undefined for Firestore compatibility
   }))
 );
 
@@ -241,6 +250,7 @@ const StudyContext = createContext<{
   resetSchedule: () => void;
   bulkUpdateSchedule: (newSchedule: Record<number, string[]>) => void;
   updateSubjectData: (id: string, data: Partial<Subject>) => void;
+  syncStatus: 'idle' | 'saving' | 'synced' | 'error';
 } | null>(null);
 
 const useAuth = () => useContext(AuthContext)!;
@@ -302,16 +312,24 @@ const Sidebar = () => {
 
 const Header = ({ title }: { title: string }) => {
   const { user, isDemo } = useAuth();
+  const { syncStatus } = useStudy();
+
   return (
     <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
       <div>
         <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">{title}</h1>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex items-center gap-3 mt-1">
            <p className="text-slate-500 text-sm font-bold">Investigador PCPR Alpha 2025</p>
-           {isDemo && (
+           {isDemo ? (
              <span className="bg-amber-100 text-amber-700 text-[10px] font-black uppercase px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
                <WifiOff size={10} /> Demo Offline
              </span>
+           ) : (
+             <div className="flex items-center gap-1 transition-all duration-300">
+                {syncStatus === 'saving' && <span className="text-blue-500 flex items-center gap-1 text-[10px] font-bold uppercase"><Loader2 size={10} className="animate-spin"/> Salvando...</span>}
+                {syncStatus === 'synced' && <span className="text-green-500 flex items-center gap-1 text-[10px] font-bold uppercase"><CheckCircle size={10} /> Salvo na Nuvem</span>}
+                {syncStatus === 'error' && <span className="text-red-400 flex items-center gap-1 text-[10px] font-bold uppercase"><CloudOff size={10} /> Erro de Sincronização</span>}
+             </div>
            )}
         </div>
       </div>
@@ -922,6 +940,7 @@ const AuthScreen = () => {
 const App: React.FC = () => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error'>('idle');
   const isPreview = checkPreviewEnvironment();
   const Router = isPreview ? HashRouter : BrowserRouter;
 
@@ -950,10 +969,19 @@ const App: React.FC = () => {
                if (docSnap.exists()) {
                  setState(docSnap.data() as UserState);
                } else {
-                 await setDoc(docRef, state);
+                 // Remove undefined values before initial save
+                 const cleanState = JSON.parse(JSON.stringify(state));
+                 await setDoc(docRef, cleanState);
                }
-             } catch (e) {
+             } catch (e: any) {
                console.error("Error fetching data:", e);
+               // Permission error or other failures -> Fallback to local storage
+               if (e.code === 'permission-denied' || e.message.includes('permission')) {
+                 console.log("Permission denied. Falling back to local storage.");
+                 setSyncStatus('error');
+                 const savedData = localStorage.getItem(`pcpr_store_${firebaseUser.uid}`);
+                 if (savedData) setState(JSON.parse(savedData));
+               }
              }
           }
         } else {
@@ -992,11 +1020,18 @@ const App: React.FC = () => {
   useEffect(() => {
     if (user) {
       if (isFirebaseConfigured && db) {
+        setSyncStatus('saving');
         const saveToDb = async () => {
            try {
-             await setDoc(doc(db, "users", user.uid), state, { merge: true });
+             // Sanitize state to remove undefined values which Firestore hates
+             const cleanState = JSON.parse(JSON.stringify(state));
+             await setDoc(doc(db, "users", user.uid), cleanState, { merge: true });
+             setSyncStatus('synced');
            } catch (e) {
              console.error("Error saving state:", e);
+             setSyncStatus('error');
+             // Silent fail or fallback save to local storage
+             localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
            }
         };
         const handler = setTimeout(saveToDb, 1000);
@@ -1117,7 +1152,8 @@ const App: React.FC = () => {
         removeScheduleItem,
         resetSchedule,
         bulkUpdateSchedule,
-        updateSubjectData
+        updateSubjectData,
+        syncStatus
       }}>
         <Router>
           <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-500">
