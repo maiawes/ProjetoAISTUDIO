@@ -6,7 +6,7 @@ import {
   Gavel, Play, Pause, RotateCcw, Trash2, ExternalLink, ChevronRight,
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
   X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter,
-  Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff, Cloud, CloudOff, CloudUpload
+  Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff, Cloud, CloudOff, CloudUpload, HardDrive
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -250,7 +250,7 @@ const StudyContext = createContext<{
   resetSchedule: () => void;
   bulkUpdateSchedule: (newSchedule: Record<number, string[]>) => void;
   updateSubjectData: (id: string, data: Partial<Subject>) => void;
-  syncStatus: 'idle' | 'saving' | 'synced' | 'error';
+  syncStatus: 'idle' | 'saving' | 'synced' | 'error' | 'local';
 } | null>(null);
 
 const useAuth = () => useContext(AuthContext)!;
@@ -285,7 +285,7 @@ const Sidebar = () => {
           <Gavel size={24} />
         </div>
         <div className="hidden lg:block">
-          <h2 className="font-extrabold text-xl tracking-tighter text-pcpr-blue dark:text-white uppercase">PCPR HUB</h2>
+          <h2 className="font-extrabold text-xl tracking-tighter text-pcpr-blue dark:text-white uppercase">APJ PCPR</h2>
         </div>
       </div>
       <nav className="flex-grow px-4 space-y-2 mt-4">
@@ -319,7 +319,7 @@ const Header = ({ title }: { title: string }) => {
       <div>
         <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-white">{title}</h1>
         <div className="flex items-center gap-3 mt-1">
-           <p className="text-slate-500 text-sm font-bold">Investigador PCPR Alpha 2025</p>
+           <p className="text-slate-500 text-sm font-bold">Agente de Polícia Judiciária PR</p>
            {isDemo ? (
              <span className="bg-amber-100 text-amber-700 text-[10px] font-black uppercase px-2 py-0.5 rounded-md border border-amber-200 flex items-center gap-1">
                <WifiOff size={10} /> Demo Offline
@@ -329,6 +329,7 @@ const Header = ({ title }: { title: string }) => {
                 {syncStatus === 'saving' && <span className="text-blue-500 flex items-center gap-1 text-[10px] font-bold uppercase"><Loader2 size={10} className="animate-spin"/> Salvando...</span>}
                 {syncStatus === 'synced' && <span className="text-green-500 flex items-center gap-1 text-[10px] font-bold uppercase"><CheckCircle size={10} /> Salvo na Nuvem</span>}
                 {syncStatus === 'error' && <span className="text-red-400 flex items-center gap-1 text-[10px] font-bold uppercase"><CloudOff size={10} /> Erro de Sincronização</span>}
+                {syncStatus === 'local' && <span className="text-amber-500 flex items-center gap-1 text-[10px] font-bold uppercase"><HardDrive size={10} /> Salvo Localmente</span>}
              </div>
            )}
         </div>
@@ -659,9 +660,10 @@ const Edital = () => {
                                  type="range" 
                                  min="0" 
                                  max="100" 
+                                 step="1"
                                  value={s.relevance}
                                  onChange={(e) => updateSubjectData(s.id, { relevance: parseInt(e.target.value) })}
-                                 className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                 className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-pcpr-blue"
                                />
                                <span className="text-xs font-bold w-8 text-right text-pcpr-blue dark:text-blue-400">{s.relevance}%</span>
                              </div>
@@ -707,11 +709,6 @@ const Edital = () => {
                                </a>
                              )}
                           </div>
-                        </div>
-                        <div className="flex items-end gap-2">
-                           <button className="flex-grow py-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold text-xs text-slate-500 hover:text-pcpr-blue transition-colors">
-                             Marcar como Concluído
-                           </button>
                         </div>
                       </div>
                     </div>
@@ -857,6 +854,34 @@ const Schedule = () => {
                     ))}
                   </div>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <label className="block text-[11px] font-black uppercase text-slate-400 mb-4 tracking-widest">2. Matérias por Dia</label>
+                    <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700">
+                        <button onClick={() => setSubjectsPerDay(prev => Math.max(1, prev - 1))} className="w-10 h-10 rounded-xl bg-white dark:bg-slate-700 shadow-sm flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-600 font-bold">-</button>
+                        <span className="text-xl font-black text-slate-700 dark:text-slate-200 w-8 text-center">{subjectsPerDay}</span>
+                        <button onClick={() => setSubjectsPerDay(prev => prev + 1)} className="w-10 h-10 rounded-xl bg-white dark:bg-slate-700 shadow-sm flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-600 font-bold">+</button>
+                        <span className="text-xs font-bold text-slate-400 ml-2">Matérias</span>
+                    </div>
+                  </div>
+
+                  <div>
+                     <label className="block text-[11px] font-black uppercase text-slate-400 mb-4 tracking-widest">3. Dias da Semana</label>
+                     <div className="flex flex-wrap gap-2">
+                        {days.map((d, i) => (
+                           <button 
+                             key={i} 
+                             onClick={() => setCycleDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}
+                             className={`w-10 h-10 rounded-xl font-bold text-xs flex items-center justify-center transition-all ${cycleDays.includes(i) ? 'bg-pcpr-blue text-white shadow-lg shadow-blue-500/30' : 'bg-slate-50 dark:bg-slate-800 text-slate-400'}`}
+                           >
+                             {d.substring(0, 3)}
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+                </div>
+
                 <button onClick={generateCycle} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-sm uppercase shadow-xl hover:scale-105 active:scale-95 transition-all">
                   Aplicar Ciclo Inteligente
                 </button>
@@ -940,7 +965,7 @@ const AuthScreen = () => {
 const App: React.FC = () => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error'>('idle');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error' | 'local'>('idle');
   const isPreview = checkPreviewEnvironment();
   const Router = isPreview ? HashRouter : BrowserRouter;
 
@@ -978,7 +1003,7 @@ const App: React.FC = () => {
                // Permission error or other failures -> Fallback to local storage
                if (e.code === 'permission-denied' || e.message.includes('permission')) {
                  console.log("Permission denied. Falling back to local storage.");
-                 setSyncStatus('error');
+                 setSyncStatus('local');
                  const savedData = localStorage.getItem(`pcpr_store_${firebaseUser.uid}`);
                  if (savedData) setState(JSON.parse(savedData));
                }
@@ -1020,6 +1045,12 @@ const App: React.FC = () => {
   useEffect(() => {
     if (user) {
       if (isFirebaseConfigured && db) {
+        // If we already established we have no permission, don't try to save to cloud repeatedly
+        if (syncStatus === 'local') {
+          localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
+          return;
+        }
+
         setSyncStatus('saving');
         const saveToDb = async () => {
            try {
@@ -1027,9 +1058,16 @@ const App: React.FC = () => {
              const cleanState = JSON.parse(JSON.stringify(state));
              await setDoc(doc(db, "users", user.uid), cleanState, { merge: true });
              setSyncStatus('synced');
-           } catch (e) {
+           } catch (e: any) {
              console.error("Error saving state:", e);
-             setSyncStatus('error');
+             
+             // Handle Permission Denied gracefully
+             if (e.code === 'permission-denied' || e.message.includes('permission')) {
+                setSyncStatus('local');
+             } else {
+                setSyncStatus('error');
+             }
+             
              // Silent fail or fallback save to local storage
              localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
            }
@@ -1041,11 +1079,16 @@ const App: React.FC = () => {
         localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
       }
     }
-    
-    // Always sync theme
-    if (state.theme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
   }, [state, user]);
+
+  // Separate Effect for Theme to ensure it always runs independently of DB sync
+  useEffect(() => {
+    if (state.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [state.theme]);
 
   const login = async (e: string, p: string) => {
     if (isFirebaseConfigured && auth) {
