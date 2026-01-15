@@ -6,7 +6,8 @@ import {
   Gavel, Play, Pause, RotateCcw, Trash2, ExternalLink, ChevronRight,
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
   X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter,
-  Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff, Cloud, CloudOff, CloudUpload, HardDrive
+  Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff, Cloud, CloudOff, CloudUpload, HardDrive,
+  Square
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -87,7 +88,7 @@ const JURIS_DB: Record<string, string> = {
   "Princípios da Administração Pública": "STF/STJ: Princípio da legalidade estrita para a Administração.\nSTF: Violação aos princípios do art. 37 pode configurar improbidade, mesmo sem dano ao erário (antes da reforma).",
   "Agentes públicos": "STF: Acumulação ilícita de cargos → devolução dos valores somente se comprovada má-fé.\nSTF: Estágio probatório não dispensa contraditório e ampla defesa para exoneração.",
   "Poder de polícia": "STJ: Poder de polícia é indelegável a pessoas jurídicas de direito privado, salvo atos materiais.\nSTF: Multas administrativas não podem ter caráter confiscatório.",
-  "Responsabilidade civil do Estado": "STF (Tema 940): Responsabilidade objetiva do Estado; Direito de regresso contra o agente com dolo ou culpa.\nSTF: Omissão do Estado → responsabilidade subjetiva (necessidade de prova de culpa).",
+  "Responsabilidade civil do State": "STF (Tema 940): Responsabilidade objetiva do Estado; Direito de regresso contra o agente com dolo ou culpa.\nSTF: Omissão do Estado → responsabilidade subjetiva (necessidade de prova de culpa).",
   "Infração penal": "STF/STJ: Crime exige tipicidade + ilicitude + culpabilidade.\nSTF: Princípio da insignificância exige mínima ofensividade, nenhuma periculosidade social, reduzido grau de reprovabilidade e inexpressividade da lesão.",
   "Erro de tipo e erro de proibição": "STJ: Erro de tipo exclui dolo, podendo gerar culpa.\nSTF: Erro de proibição inevitável exclui culpabilidade; evitável → redução de pena.",
   "Concurso de pessoas": "STJ: Participação de menor importância → redução obrigatória de pena.\nSTF: Teoria do domínio do fato aplicada com cautela (não é automática).",
@@ -147,7 +148,7 @@ const DISCIPLINE_DATA = [
   {
     "materia": "Direito Penal",
     "assuntos": [
-      "Infração penal: elementos, espécies", "Sujeito ativo e sujeito passivo da infração penal",
+      "Infração penal: elements, espécies", "Sujeito ativo e sujeito passivo da infração penal",
       "Tipicidade, ilicitude, culpabilidade, punibilidade", "Erro de tipo e erro de proibição",
       "Imputabilidade penal", "Concurso de pessoas", "Crimes contra a administração pública",
       "Crimes contra o patrimônio", "Crimes contra a pessoa"
@@ -531,7 +532,7 @@ const Pomodoro = () => {
         const diff = Math.ceil((endTime - now) / 1000);
 
         if (diff <= 0) {
-           // Finished
+           // Finished automatically
            setTimeLeft(0);
            setIsActive(false);
            setEndTime(null);
@@ -586,6 +587,29 @@ const Pomodoro = () => {
     setTimeLeft(totalTime);
   };
 
+  const stopAndCompute = () => {
+    const elapsed = totalTime - timeLeft;
+    if (elapsed <= 0) {
+      alert("Nenhum tempo decorrido para computar.");
+      return;
+    }
+    if (selectedIds.length === 0) {
+      alert("Selecione ao menos um assunto para computar o tempo antes de parar.");
+      return;
+    }
+
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    
+    if (confirm(`Deseja interromper o cronômetro e salvar ${minutes}m ${seconds}s de estudo nos assuntos selecionados?`)) {
+      addTime(selectedIds, elapsed);
+      setIsActive(false);
+      setEndTime(null);
+      setTimeLeft(totalTime);
+      setSelectedIds([]);
+    }
+  };
+
   const filteredSubjects = filterDiscipline === 'all' 
     ? state.subjects 
     : state.subjects.filter(s => s.discipline === filterDiscipline);
@@ -616,12 +640,20 @@ const Pomodoro = () => {
                {Math.floor(timeLeft/60).toString().padStart(2,'0')}:{(timeLeft%60).toString().padStart(2,'0')}
              </div>
              
-             <div className="flex justify-center gap-4">
-               <button onClick={toggleTimer} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 ${isActive ? 'bg-amber-500 text-white' : 'bg-pcpr-blue text-white'}`}>
-                 {isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}
+             <div className="flex justify-center items-center gap-4">
+               {/* RESET BUTTON */}
+               <button onClick={resetTimer} className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-all hover:rotate-180 text-slate-500 hover:text-pcpr-blue">
+                 <RotateCcw size={24} />
                </button>
-               <button onClick={resetTimer} className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-all hover:rotate-180">
-                 <RotateCcw size={32} />
+
+               {/* PLAY/PAUSE BUTTON */}
+               <button onClick={toggleTimer} className={`w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 ${isActive ? 'bg-amber-500 text-white' : 'bg-pcpr-blue text-white'}`}>
+                 {isActive ? <Pause size={36} /> : <Play size={36} className="ml-2" />}
+               </button>
+
+               {/* STOP/COMPUTE BUTTON */}
+               <button onClick={stopAndCompute} className="w-16 h-16 bg-red-100 dark:bg-red-900/20 text-red-500 rounded-full flex items-center justify-center transition-all hover:scale-110">
+                 <Square size={24} fill="currentColor" />
                </button>
              </div>
              
