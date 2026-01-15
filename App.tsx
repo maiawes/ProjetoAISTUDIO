@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Timer, BookOpen, Calendar, LogOut, Moon, Sun, 
@@ -38,7 +38,7 @@ if (isFirebaseConfigured) {
     db = getFirestore(app);
     
     // Enable Offline Persistence
-    enableIndexedDbPersistence(db).catch((err) => {
+    enableIndexedDbPersistence(db).catch((err: any) => {
       if (err.code == 'failed-precondition') {
           console.log('Persistence failed: multiple tabs open');
       } else if (err.code == 'unimplemented') {
@@ -250,6 +250,7 @@ const StudyContext = createContext<{
   resetSchedule: () => void;
   bulkUpdateSchedule: (newSchedule: Record<number, string[]>) => void;
   updateSubjectData: (id: string, data: Partial<Subject>) => void;
+  addNewSubject: (discipline: string, topic: string) => void;
   syncStatus: 'idle' | 'saving' | 'synced' | 'error' | 'local';
 } | null>(null);
 
@@ -368,7 +369,26 @@ const Dashboard = () => {
   }, []);
 
   const pendingReviews = state.subjects.filter(s => s.needsReview);
-  const urgentReviews = pendingReviews.filter(s => todaySchedule.includes(s.discipline));
+  
+  // FIX: Review Alert Logic
+  // Show alert ONLY if scheduled for today AND NOT studied today.
+  const urgentReviews = pendingReviews.filter(s => {
+    const isScheduledToday = todaySchedule.includes(s.discipline);
+    if (!isScheduledToday) return false;
+
+    // Check if it was studied today. If yes, hide alert until next time.
+    if (s.lastStudied) {
+       const last = new Date(s.lastStudied);
+       const today = new Date();
+       if (last.getDate() === today.getDate() && 
+           last.getMonth() === today.getMonth() && 
+           last.getFullYear() === today.getFullYear()) {
+           return false; // Studied today, don't nag
+       }
+    }
+    return true;
+  });
+
   const otherReviews = pendingReviews.filter(s => !todaySchedule.includes(s.discipline));
 
   return (
@@ -483,6 +503,12 @@ const Pomodoro = () => {
   const [totalTime, setTotalTime] = useState(state.pomodoroConfig.focus * 60);
   const [timeLeft, setTimeLeft] = useState(totalTime);
   const [isActive, setIsActive] = useState(false);
+  
+  // FIX: Drift/Lag Prevention
+  // We use endTime to calculate remaining time relative to Date.now()
+  // This prevents browser throttling from slowing down the timer.
+  const [endTime, setEndTime] = useState<number | null>(null);
+
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filterDiscipline, setFilterDiscipline] = useState<string>('all');
 
@@ -493,26 +519,40 @@ const Pomodoro = () => {
     { label: 'Pausa Longa', min: 15, icon: <Gamepad2 size={18} className="text-purple-500" /> },
   ];
 
-  const disciplines = Array.from(new Set(state.subjects.map(s => s.discipline)));
+  const disciplines = Array.from(new Set<string>(state.subjects.map(s => s.discipline)));
 
   useEffect(() => {
     let interval: any;
-    if (isActive && timeLeft > 0) {
-      interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    } else if (timeLeft === 0) {
-      setIsActive(false);
-      if (selectedIds.length > 0) {
-        addTime(selectedIds, totalTime);
-        alert("Sessão finalizada! O tempo foi computado e os assuntos marcados para revisão futura.");
-        setSelectedIds([]);
-        setTimeLeft(totalTime);
-      } else {
-        alert("Sessão finalizada, mas nenhum assunto estava selecionado (Pausa ou Esquecimento).");
-        setTimeLeft(totalTime);
-      }
+
+    if (isActive && endTime) {
+      // High frequency interval to update UI, but logic relies on Date.now() delta
+      interval = setInterval(() => {
+        const now = Date.now();
+        const diff = Math.ceil((endTime - now) / 1000);
+
+        if (diff <= 0) {
+           // Finished
+           setTimeLeft(0);
+           setIsActive(false);
+           setEndTime(null);
+           
+           if (selectedIds.length > 0) {
+             addTime(selectedIds, totalTime);
+             alert("Sessão finalizada! O tempo foi computado e os assuntos marcados para revisão futura.");
+             setSelectedIds([]);
+             setTimeLeft(totalTime);
+           } else {
+             alert("Sessão finalizada, mas nenhum assunto estava selecionado (Pausa ou Esquecimento).");
+             setTimeLeft(totalTime);
+           }
+        } else {
+           setTimeLeft(diff);
+        }
+      }, 200); // Update 5 times a second for smoothness, but math is absolute
     }
+
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, selectedIds, totalTime]);
+  }, [isActive, endTime, selectedIds, totalTime]);
 
   const toggleSubject = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -523,6 +563,27 @@ const Pomodoro = () => {
     setTotalTime(sec);
     setTimeLeft(sec);
     setIsActive(false);
+    setEndTime(null);
+  };
+
+  const toggleTimer = () => {
+    if (isActive) {
+      // Pause
+      setIsActive(false);
+      setEndTime(null);
+      // timeLeft keeps the current remaining seconds
+    } else {
+      // Play
+      setIsActive(true);
+      // Calculate new end time based on CURRENT remaining time
+      setEndTime(Date.now() + timeLeft * 1000);
+    }
+  };
+
+  const resetTimer = () => {
+    setIsActive(false);
+    setEndTime(null);
+    setTimeLeft(totalTime);
   };
 
   const filteredSubjects = filterDiscipline === 'all' 
@@ -556,10 +617,10 @@ const Pomodoro = () => {
              </div>
              
              <div className="flex justify-center gap-4">
-               <button onClick={() => setIsActive(!isActive)} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 ${isActive ? 'bg-amber-500 text-white' : 'bg-pcpr-blue text-white'}`}>
+               <button onClick={toggleTimer} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all hover:scale-110 ${isActive ? 'bg-amber-500 text-white' : 'bg-pcpr-blue text-white'}`}>
                  {isActive ? <Pause size={32} /> : <Play size={32} className="ml-2" />}
                </button>
-               <button onClick={() => { setIsActive(false); setTimeLeft(totalTime); }} className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-all hover:rotate-180">
+               <button onClick={resetTimer} className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center transition-all hover:rotate-180">
                  <RotateCcw size={32} />
                </button>
              </div>
@@ -615,19 +676,45 @@ const Pomodoro = () => {
 };
 
 const Edital = () => {
-  const { state, updateSubjectData } = useStudy();
+  const { state, updateSubjectData, addNewSubject } = useStudy();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [modalJuris, setModalJuris] = useState<{title: string, content: string} | null>(null);
+  
+  // State for adding new topics
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newDiscipline, setNewDiscipline] = useState("");
+  const [newTopic, setNewTopic] = useState("");
+  const [isCustomDiscipline, setIsCustomDiscipline] = useState(false);
 
-  const disciplines = Array.from(new Set(state.subjects.map(s => s.discipline)));
+  const disciplines = Array.from(new Set<string>(state.subjects.map(s => s.discipline)));
 
   const toggleDiscipline = (disc: string) => {
     setExpanded(prev => ({ ...prev, [disc]: !prev[disc] }));
   };
 
+  const handleAddSubmit = () => {
+    if (!newDiscipline || !newTopic) {
+      alert("Preencha todos os campos.");
+      return;
+    }
+    addNewSubject(newDiscipline, newTopic);
+    setIsAddModalOpen(false);
+    setNewTopic("");
+    // We keep the discipline to make it easier to add multiple topics to same discipline
+  };
+
   return (
     <div className="animate-in fade-in slide-in-from-right-4 duration-500">
-      <Header title="Edital Verticalizado" />
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-10 gap-4">
+        <Header title="Edital Verticalizado" />
+        <button 
+          onClick={() => setIsAddModalOpen(true)}
+          className="flex items-center gap-2 px-6 py-3 bg-pcpr-blue text-white rounded-2xl font-black text-[10px] uppercase hover:scale-105 transition-all shadow-lg shadow-blue-500/20"
+        >
+          <PlusCircle size={14} /> Adicionar Tópico
+        </button>
+      </div>
+
       <div className="space-y-4">
         {disciplines.map(disc => {
           const isExpanded = !!expanded[disc];
@@ -744,6 +831,62 @@ const Edital = () => {
                 <p className="text-[10px] font-black text-slate-400 uppercase text-center italic">Hub atualizado com informativos 2024/2025</p>
              </div>
           </div>
+        </div>
+      )}
+
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
+           <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] w-full max-w-lg shadow-2xl border border-white/10">
+              <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-xl font-black tracking-tight">Adicionar Novo Tópico</h3>
+                 <button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
+              </div>
+              
+              <div className="space-y-6">
+                 <div>
+                    <div className="flex justify-between items-center mb-2">
+                       <label className="text-[11px] font-black uppercase text-slate-400 tracking-widest">1. Disciplina / Matéria</label>
+                       <button onClick={() => setIsCustomDiscipline(!isCustomDiscipline)} className="text-[10px] font-bold text-pcpr-blue hover:underline">
+                         {isCustomDiscipline ? 'Selecionar Existente' : 'Criar Nova Disciplina'}
+                       </button>
+                    </div>
+                    
+                    {isCustomDiscipline ? (
+                      <input 
+                        type="text" 
+                        placeholder="Digite o nome da nova matéria..."
+                        value={newDiscipline}
+                        onChange={e => setNewDiscipline(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold text-sm border-2 border-transparent focus:border-pcpr-blue outline-none"
+                      />
+                    ) : (
+                      <select 
+                        value={newDiscipline} 
+                        onChange={e => setNewDiscipline(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold text-sm border-2 border-transparent focus:border-pcpr-blue outline-none appearance-none"
+                      >
+                         <option value="">Selecione uma matéria...</option>
+                         {disciplines.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    )}
+                 </div>
+
+                 <div>
+                    <label className="block text-[11px] font-black uppercase text-slate-400 mb-2 tracking-widest">2. Nome do Assunto</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: Crimes contra a honra..."
+                      value={newTopic}
+                      onChange={e => setNewTopic(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold text-sm border-2 border-transparent focus:border-pcpr-blue outline-none"
+                    />
+                 </div>
+
+                 <button onClick={handleAddSubmit} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-sm uppercase shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2">
+                   <Save size={18} /> Salvar no Edital
+                 </button>
+              </div>
+           </div>
         </div>
       )}
     </div>
@@ -1176,6 +1319,22 @@ const App: React.FC = () => {
     setState(s => ({...s, subjects: s.subjects.map(subj => subj.id === id ? {...subj, ...data} : subj)}));
   };
 
+  const addNewSubject = (discipline: string, topic: string) => {
+    const id = `${discipline.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+    const newSubject: Subject = {
+      id,
+      discipline,
+      name: topic,
+      relevance: 0,
+      timeSpent: 0,
+      questionLink: "",
+      jurisprudencia: "", // Could potentially fetch default if needed, but leaving empty is safer
+      lastStudied: null,
+      needsReview: false
+    };
+    setState(s => ({ ...s, subjects: [...s.subjects, newSubject] }));
+  };
+
   if (loading) return (
      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <Loader2 className="animate-spin text-pcpr-blue w-12 h-12" />
@@ -1196,6 +1355,7 @@ const App: React.FC = () => {
         resetSchedule,
         bulkUpdateSchedule,
         updateSubjectData,
+        addNewSubject,
         syncStatus
       }}>
         <Router>
