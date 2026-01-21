@@ -1,12 +1,11 @@
-
-import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
+import React, { useState, useEffect, createContext, useContext, useMemo } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Timer, BookOpen, Calendar, LogOut, Moon, Sun, 
-  Gavel, Play, Pause, RotateCcw, Trash2, ExternalLink, ChevronRight,
+  Gavel, Play, Pause, RotateCcw, ExternalLink, ChevronRight,
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
-  X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter,
-  Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff, Cloud, CloudOff, CloudUpload, HardDrive,
+  X, RefreshCw, Zap, Check, Scale, Globe, ListChecks, Filter,
+  Coffee, Brain, Gamepad2, Loader2, Save, WifiOff, CloudOff, HardDrive,
   Square, Edit3
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -60,8 +59,16 @@ interface Subject {
   timeSpent: number;
   questionLink?: string;
   jurisprudencia?: string;
-  lastStudied?: string | null; // Changed to allow null for Firestore compatibility
+  lastStudied?: string | null; 
   needsReview?: boolean;
+}
+
+interface TimerState {
+  isActive: boolean;
+  timeLeft: number;
+  totalTime: number;
+  endTime: number | null;
+  selectedIds: string[];
 }
 
 interface UserState {
@@ -69,6 +76,7 @@ interface UserState {
   schedule: Record<number, string[]>;
   pomodoroConfig: { focus: number; short: number; long: number };
   theme: 'light' | 'dark';
+  timer: TimerState; // Global timer state
 }
 
 interface AuthUser {
@@ -217,7 +225,7 @@ const INITIAL_SUBJECTS: Subject[] = DISCIPLINE_DATA.flatMap(m =>
     questionLink: "",
     jurisprudencia: getInitialJuris(m.materia, name),
     needsReview: false,
-    lastStudied: null // Fixed: Use null instead of undefined for Firestore compatibility
+    lastStudied: null 
   }))
 );
 
@@ -252,6 +260,13 @@ const StudyContext = createContext<{
   bulkUpdateSchedule: (newSchedule: Record<number, string[]>) => void;
   updateSubjectData: (id: string, data: Partial<Subject>) => void;
   addNewSubject: (discipline: string, topic: string) => void;
+  timerActions: {
+    toggleTimer: () => void;
+    resetTimer: () => void;
+    setTimerDuration: (seconds: number) => void;
+    toggleSubjectSelection: (id: string) => void;
+    stopAndCompute: () => void;
+  };
   syncStatus: 'idle' | 'saving' | 'synced' | 'error' | 'local';
 } | null>(null);
 
@@ -272,10 +287,12 @@ const Sidebar = () => {
   const { pathname } = useLocation();
   const { state, updateState } = useStudy();
   const { logout } = useAuth();
+  
+  const isTimerActive = state.timer.isActive;
 
   const menu = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Painel' },
-    { path: '/pomodoro', icon: Timer, label: 'Pomodoro' },
+    { path: '/pomodoro', icon: Timer, label: 'Pomodoro', hasIndicator: isTimerActive },
     { path: '/edital', icon: BookOpen, label: 'Edital' },
     { path: '/schedule', icon: Calendar, label: 'Cronograma' },
   ];
@@ -292,8 +309,11 @@ const Sidebar = () => {
       </div>
       <nav className="flex-grow px-4 space-y-2 mt-4">
         {menu.map(item => (
-          <Link key={item.path} to={item.path} className={`flex items-center space-x-4 p-4 rounded-2xl transition-all ${pathname === item.path ? 'bg-pcpr-blue text-white shadow-xl shadow-blue-500/20' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
-            <item.icon size={22} />
+          <Link key={item.path} to={item.path} className={`relative flex items-center space-x-4 p-4 rounded-2xl transition-all ${pathname === item.path ? 'bg-pcpr-blue text-white shadow-xl shadow-blue-500/20' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}>
+            <item.icon size={22} className={item.hasIndicator ? "animate-pulse text-pcpr-blue dark:text-pcpr-blue" : ""} />
+            {item.hasIndicator && pathname !== item.path && (
+               <span className="absolute top-3 right-3 lg:top-1/2 lg:-translate-y-1/2 lg:right-4 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+            )}
             <span className="hidden lg:block font-semibold">{item.label}</span>
           </Link>
         ))}
@@ -372,12 +392,9 @@ const Dashboard = () => {
   const pendingReviews = state.subjects.filter(s => s.needsReview);
   
   // FIX: Review Alert Logic
-  // Show alert ONLY if scheduled for today AND NOT studied today.
   const urgentReviews = pendingReviews.filter(s => {
     const isScheduledToday = todaySchedule.includes(s.discipline);
     if (!isScheduledToday) return false;
-
-    // Check if it was studied today. If yes, hide alert until next time.
     if (s.lastStudied) {
        const last = new Date(s.lastStudied);
        const today = new Date();
@@ -396,7 +413,6 @@ const Dashboard = () => {
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
       <Header title="Painel de Controle" />
       
-      {/* Jurisprudence Banner */}
       {randomJuris && (
         <div className="mb-10 bg-gradient-to-r from-pcpr-blue to-blue-900 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-xl shadow-blue-900/20">
           <div className="absolute top-0 right-0 p-10 opacity-10 rotate-12">
@@ -417,7 +433,6 @@ const Dashboard = () => {
         </div>
       )}
       
-      {/* Alert Section */}
       {urgentReviews.length > 0 && (
         <div className="mb-10 bg-amber-50 dark:bg-amber-900/10 border-l-4 border-amber-500 p-6 rounded-2xl shadow-sm">
           <div className="flex items-start gap-4">
@@ -500,17 +515,11 @@ const Dashboard = () => {
 };
 
 const Pomodoro = () => {
-  const { state, addTime } = useStudy();
-  const [totalTime, setTotalTime] = useState(state.pomodoroConfig.focus * 60);
-  const [timeLeft, setTimeLeft] = useState(totalTime);
-  const [isActive, setIsActive] = useState(false);
+  const { state, timerActions } = useStudy();
+  const { toggleTimer, resetTimer, setTimerDuration, toggleSubjectSelection, stopAndCompute } = timerActions;
   
-  // FIX: Drift/Lag Prevention
-  // We use endTime to calculate remaining time relative to Date.now()
-  // This prevents browser throttling from slowing down the timer.
-  const [endTime, setEndTime] = useState<number | null>(null);
-
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const { timeLeft, isActive, totalTime, selectedIds } = state.timer;
+  
   const [filterDiscipline, setFilterDiscipline] = useState<string>('all');
 
   const PRESETS = [
@@ -522,92 +531,8 @@ const Pomodoro = () => {
 
   const disciplines = Array.from(new Set<string>(state.subjects.map(s => s.discipline)));
 
-  useEffect(() => {
-    let interval: any;
-
-    if (isActive && endTime) {
-      // High frequency interval to update UI, but logic relies on Date.now() delta
-      interval = setInterval(() => {
-        const now = Date.now();
-        const diff = Math.ceil((endTime - now) / 1000);
-
-        if (diff <= 0) {
-           // Finished automatically
-           setTimeLeft(0);
-           setIsActive(false);
-           setEndTime(null);
-           
-           if (selectedIds.length > 0) {
-             addTime(selectedIds, totalTime);
-             alert("Sessão finalizada! O tempo foi computado e os assuntos marcados para revisão futura.");
-             setSelectedIds([]);
-             setTimeLeft(totalTime);
-           } else {
-             alert("Sessão finalizada, mas nenhum assunto estava selecionado (Pausa ou Esquecimento).");
-             setTimeLeft(totalTime);
-           }
-        } else {
-           setTimeLeft(diff);
-        }
-      }, 200); // Update 5 times a second for smoothness, but math is absolute
-    }
-
-    return () => clearInterval(interval);
-  }, [isActive, endTime, selectedIds, totalTime]);
-
-  const toggleSubject = (id: string) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
   const handlePreset = (minutes: number) => {
-    const sec = minutes * 60;
-    setTotalTime(sec);
-    setTimeLeft(sec);
-    setIsActive(false);
-    setEndTime(null);
-  };
-
-  const toggleTimer = () => {
-    if (isActive) {
-      // Pause
-      setIsActive(false);
-      setEndTime(null);
-      // timeLeft keeps the current remaining seconds
-    } else {
-      // Play
-      setIsActive(true);
-      // Calculate new end time based on CURRENT remaining time
-      setEndTime(Date.now() + timeLeft * 1000);
-    }
-  };
-
-  const resetTimer = () => {
-    setIsActive(false);
-    setEndTime(null);
-    setTimeLeft(totalTime);
-  };
-
-  const stopAndCompute = () => {
-    const elapsed = totalTime - timeLeft;
-    if (elapsed <= 0) {
-      alert("Nenhum tempo decorrido para computar.");
-      return;
-    }
-    if (selectedIds.length === 0) {
-      alert("Selecione ao menos um assunto para computar o tempo antes de parar.");
-      return;
-    }
-
-    const minutes = Math.floor(elapsed / 60);
-    const seconds = elapsed % 60;
-    
-    if (confirm(`Deseja interromper o cronômetro e salvar ${minutes}m ${seconds}s de estudo nos assuntos selecionados?`)) {
-      addTime(selectedIds, elapsed);
-      setIsActive(false);
-      setEndTime(null);
-      setTimeLeft(totalTime);
-      setSelectedIds([]);
-    }
+    setTimerDuration(minutes * 60);
   };
 
   const filteredSubjects = filterDiscipline === 'all' 
@@ -685,7 +610,7 @@ const Pomodoro = () => {
                 return (
                   <div 
                     key={s.id} 
-                    onClick={() => toggleSubject(s.id)}
+                    onClick={() => toggleSubjectSelection(s.id)}
                     className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 group ${isSelected ? 'bg-pcpr-blue/5 border-pcpr-blue dark:bg-blue-900/20' : 'bg-transparent border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                   >
                     <div className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-pcpr-blue border-pcpr-blue' : 'border-slate-300 group-hover:border-pcpr-blue'}`}>
@@ -711,14 +636,10 @@ const Edital = () => {
   const { state, updateSubjectData, addNewSubject } = useStudy();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [modalJuris, setModalJuris] = useState<{title: string, content: string} | null>(null);
-  
-  // State for adding new topics
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newDiscipline, setNewDiscipline] = useState("");
   const [newTopic, setNewTopic] = useState("");
   const [isCustomDiscipline, setIsCustomDiscipline] = useState(false);
-
-  // State for editing jurisprudence
   const [editingJuris, setEditingJuris] = useState<{id: string, name: string, text: string} | null>(null);
 
   const disciplines = Array.from(new Set<string>(state.subjects.map(s => s.discipline)));
@@ -735,7 +656,6 @@ const Edital = () => {
     addNewSubject(newDiscipline, newTopic);
     setIsAddModalOpen(false);
     setNewTopic("");
-    // We keep the discipline to make it easier to add multiple topics to same discipline
   };
 
   const openEditJuris = (s: Subject) => {
@@ -790,7 +710,6 @@ const Edital = () => {
                         <div className="flex-grow w-full">
                           <h4 className="font-bold text-lg text-slate-800 dark:text-slate-200">{s.name}</h4>
                           <div className="flex flex-col sm:flex-row sm:items-center gap-4 mt-4 w-full">
-                             {/* Editable Relevance Slider */}
                              <div className="flex-grow flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
                                <span className="text-[10px] font-black uppercase text-slate-400 whitespace-nowrap">Relevância</span>
                                <input 
@@ -902,7 +821,6 @@ const Edital = () => {
         </div>
       )}
 
-      {/* Edit Jurisprudence Modal */}
       {editingJuris && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
            <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] w-full max-w-2xl shadow-2xl border border-white/10">
@@ -1002,7 +920,7 @@ const Schedule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCycleModalOpen, setIsCycleModalOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState(1);
-  const [selectedSubject, setSelectedSubject] = useState(DISCIPLINE_DATA[0].materia);
+  const [selectedSubject, setSelectedSubject] = useState("");
 
   const [cycleDisciplines, setCycleDisciplines] = useState<string[]>([]);
   const [cycleDays, setCycleDays] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -1013,10 +931,33 @@ const Schedule = () => {
   const currentDayIndex = now.getDay();
   const formattedDate = now.toLocaleDateString('pt-BR');
 
-  // Compute available disciplines dynamically from state instead of static DISCIPLINE_DATA
-  const availableDisciplines = Array.from(new Set(state.subjects.map(s => s.discipline))).sort();
+  // Compute available topics grouped by discipline
+  const subjectsByDiscipline = useMemo(() => {
+    const groups: Record<string, string[]> = {};
+    state.subjects.forEach(s => {
+      if (!groups[s.discipline]) groups[s.discipline] = [];
+      groups[s.discipline].push(s.name);
+    });
+    
+    const sortedDisciplines = Object.keys(groups).sort();
+    sortedDisciplines.forEach(d => {
+      groups[d].sort();
+    });
+    
+    return { sortedDisciplines, groups };
+  }, [state.subjects]);
+
+  // Set default subject when modal opens or groups change
+  useEffect(() => {
+    if (subjectsByDiscipline.sortedDisciplines.length > 0 && !selectedSubject) {
+       const firstDisc = subjectsByDiscipline.sortedDisciplines[0];
+       const firstTopic = subjectsByDiscipline.groups[firstDisc][0];
+       setSelectedSubject(firstTopic);
+    }
+  }, [subjectsByDiscipline, selectedSubject]);
 
   const handleAdd = () => {
+    if (!selectedSubject) return;
     addScheduleItem(selectedDay, selectedSubject);
     setIsModalOpen(false);
   };
@@ -1030,6 +971,7 @@ const Schedule = () => {
     sortedDays.forEach(dayIdx => {
       const items = [];
       for (let i = 0; i < subjectsPerDay; i++) {
+        // Now selecting the Discipline Name directly
         items.push(cycleDisciplines[disciplineIdx % cycleDisciplines.length]);
         disciplineIdx++;
       }
@@ -1037,6 +979,10 @@ const Schedule = () => {
     });
     bulkUpdateSchedule(newSchedule);
     setIsCycleModalOpen(false);
+  };
+
+  const toggleDisciplineInCycle = (discipline: string) => {
+    setCycleDisciplines(prev => prev.includes(discipline) ? prev.filter(d => d !== discipline) : [...prev, discipline]);
   };
 
   return (
@@ -1086,23 +1032,34 @@ const Schedule = () => {
         })}
       </div>
 
-      {/* Cycle Modal */}
       {isCycleModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200 overflow-y-auto">
-           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] w-full max-w-2xl shadow-2xl border border-white/10 my-8">
+           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] w-full max-w-4xl shadow-2xl border border-white/10 my-8">
               <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black tracking-tight">Gerador de Ciclo Automático</h3>
                 <button onClick={() => setIsCycleModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X /></button>
               </div>
               <div className="space-y-8">
                 <div>
-                  <label className="block text-[11px] font-black uppercase text-slate-400 mb-4 tracking-widest">1. Selecione Matérias</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {availableDisciplines.map(d => (
-                      <button key={d} onClick={() => setCycleDisciplines(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])} className={`p-3 rounded-2xl text-[10px] font-bold text-left border ${cycleDisciplines.includes(d) ? 'bg-pcpr-blue text-white' : 'bg-slate-50 dark:bg-slate-800'}`}>
-                        {d}
-                      </button>
-                    ))}
+                  <label className="block text-[11px] font-black uppercase text-slate-400 mb-4 tracking-widest">1. Selecione as Disciplinas para o Ciclo</label>
+                  <div className="h-80 overflow-y-auto custom-scrollbar pr-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {subjectsByDiscipline.sortedDisciplines.map(discipline => {
+                        const isSelected = cycleDisciplines.includes(discipline);
+                        return (
+                          <button 
+                            key={discipline} 
+                            onClick={() => toggleDisciplineInCycle(discipline)}
+                            className={`flex justify-between items-center p-6 rounded-3xl border transition-all duration-200 ${isSelected ? 'bg-pcpr-blue text-white border-pcpr-blue shadow-lg shadow-blue-500/30' : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 hover:border-pcpr-blue/50 text-slate-600 dark:text-slate-300'}`}
+                          >
+                            <h4 className="font-black text-sm uppercase text-left">{discipline}</h4>
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSelected ? 'bg-white border-white' : 'border-slate-300'}`}>
+                               {isSelected && <Check size={14} className="text-pcpr-blue" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -1141,7 +1098,6 @@ const Schedule = () => {
         </div>
       )}
 
-      {/* Manual Add Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
            <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] w-full max-w-lg shadow-2xl border border-white/10">
@@ -1163,13 +1119,19 @@ const Schedule = () => {
                  </div>
 
                  <div>
-                    <label className="block text-[11px] font-black uppercase text-slate-400 mb-2 tracking-widest">Matéria</label>
+                    <label className="block text-[11px] font-black uppercase text-slate-400 mb-2 tracking-widest">Matéria / Assunto</label>
                     <select 
                       value={selectedSubject} 
                       onChange={e => setSelectedSubject(e.target.value)}
                       className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold text-sm border-2 border-transparent focus:border-pcpr-blue outline-none appearance-none"
                     >
-                       {availableDisciplines.map(d => <option key={d} value={d}>{d}</option>)}
+                       {subjectsByDiscipline.sortedDisciplines.map(discipline => (
+                         <optgroup key={discipline} label={discipline}>
+                           {subjectsByDiscipline.groups[discipline].map(topic => (
+                             <option key={topic} value={topic}>{topic}</option>
+                           ))}
+                         </optgroup>
+                       ))}
                     </select>
                  </div>
 
@@ -1185,347 +1147,471 @@ const Schedule = () => {
 };
 
 const AuthScreen = () => {
+  const { login, register, loading } = useAuth();
+  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
-  const { login, register, isDemo } = useAuth();
-  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError('');
-    setLoading(true);
     try {
-      if (isRegistering) {
-        await register(email, password);
-      } else {
+      if (isLogin) {
         await login(email, password);
+      } else {
+        await register(email, password);
       }
-    } catch (e: any) {
-      console.error(e);
-      setError(e.message || "Erro de autenticação.");
-    } finally {
-      setLoading(false);
+    } catch (err: any) {
+      setError(err.message || 'Ocorreu um erro.');
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 relative overflow-hidden text-center">
-      <div className="w-full max-w-md bg-white p-10 rounded-[3rem] shadow-2xl relative z-10 animate-in zoom-in-95 duration-500 border border-slate-100">
-        <div className="w-20 h-20 bg-pcpr-blue mx-auto rounded-3xl flex items-center justify-center text-white mb-6 shadow-xl shadow-blue-500/20">
-          <Gavel size={40} />
+    <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
+      <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-xl w-full max-w-md border border-slate-200 dark:border-slate-700">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-pcpr-blue rounded-2xl flex items-center justify-center text-white mx-auto mb-4 shadow-lg">
+            <User size={32} />
+          </div>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-white">APJ PCPR</h2>
+          <p className="text-sm font-bold text-slate-500">Acesso Restrito</p>
         </div>
-        <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-900">
-          {isRegistering ? 'Nova Conta' : 'Login Candidato'}
-        </h1>
-        <p className="text-slate-500 text-sm font-bold mt-2 mb-8">Hub de Estudos PCPR 2025</p>
-        
-        {isDemo && (
-          <div className="bg-amber-100 text-amber-700 p-3 rounded-xl text-xs font-bold mb-6 flex items-center justify-center gap-2">
-            <WifiOff size={14} /> Modo Demo Ativo (Offline)
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
+            <AlertTriangle size={16} /> {error}
           </div>
         )}
 
-        {error && <div className="bg-red-50 text-red-500 p-3 rounded-xl text-xs font-bold mb-4 border border-red-100">{error}</div>}
-
-        <div className="space-y-4">
-          <input type="email" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800 placeholder:text-slate-400" />
-          <input type="password" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800 placeholder:text-slate-400" />
-          
-          <button onClick={handleSubmit} disabled={loading} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
-             {loading ? <Loader2 className="animate-spin" /> : (isRegistering ? 'Criar Conta' : 'Entrar no Hub')}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs font-black uppercase text-slate-400 ml-1">Email</label>
+            <div className="flex items-center bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mt-1">
+              <Mail size={18} className="text-slate-400 mr-2" />
+              <input 
+                type="email" 
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="bg-transparent w-full text-sm font-bold outline-none text-slate-700 dark:text-slate-200"
+                placeholder="seu@email.com"
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-black uppercase text-slate-400 ml-1">Senha</label>
+            <div className="flex items-center bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mt-1">
+              <Lock size={18} className="text-slate-400 mr-2" />
+              <input 
+                type="password" 
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="bg-transparent w-full text-sm font-bold outline-none text-slate-700 dark:text-slate-200"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+          </div>
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full py-4 bg-pcpr-blue text-white rounded-xl font-black uppercase text-sm shadow-lg shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all flex justify-center items-center gap-2"
+          >
+            {loading && <Loader2 size={18} className="animate-spin" />}
+            {isLogin ? 'Entrar' : 'Cadastrar'}
           </button>
+        </form>
 
-          <button onClick={() => setIsRegistering(!isRegistering)} className="text-slate-400 text-xs font-bold hover:text-pcpr-blue mt-4">
-            {isRegistering ? 'Já tem conta? Entrar' : 'Não tem conta? Cadastrar'}
+        <div className="mt-6 text-center">
+          <button 
+            onClick={() => { setIsLogin(!isLogin); setError(''); }}
+            className="text-xs font-bold text-slate-500 hover:text-pcpr-blue transition-colors"
+          >
+            {isLogin ? 'Criar uma conta nova' : 'Já possuo conta'}
           </button>
-        </div>
-        
-        <div className="mt-8 pt-6 border-t border-slate-100">
-           <p className="text-[10px] text-slate-400 font-medium">
-             {isDemo ? 'Running in Simulated Mode' : 'Database Integration Active'}
-           </p>
         </div>
       </div>
     </div>
   );
 };
 
-// --- App Root ---
-
-const App: React.FC = () => {
+const AuthProvider = ({ children }: { children?: React.ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error' | 'local'>('idle');
-  const isPreview = checkPreviewEnvironment();
-  const Router = isPreview ? HashRouter : BrowserRouter;
+  const isDemo = !isFirebaseConfigured; 
 
-  const [state, setState] = useState<UserState>(() => {
-    // Fallback initial state if not logged in yet or no DB connection
-    return { 
-      subjects: INITIAL_SUBJECTS, 
-      schedule: CRONOGRAMA_PADRAO,
-      pomodoroConfig: { focus: 25, short: 5, long: 15 }, 
-      theme: 'light' 
-    };
-  });
-
-  // Auth Listener & Data Fetching
   useEffect(() => {
-    // REAL FIREBASE MODE
-    if (isFirebaseConfigured && auth) {
-      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-        if (firebaseUser) {
-          setUser({ uid: firebaseUser.uid, email: firebaseUser.email || '' });
-          
-          if (db) {
-             try {
-               const docRef = doc(db, "users", firebaseUser.uid);
-               const docSnap = await getDoc(docRef);
-               if (docSnap.exists()) {
-                 setState(docSnap.data() as UserState);
-               } else {
-                 // Remove undefined values before initial save
-                 const cleanState = JSON.parse(JSON.stringify(state));
-                 await setDoc(docRef, cleanState);
-               }
-             } catch (e: any) {
-               console.error("Error fetching data:", e);
-               // Permission error or other failures -> Fallback to local storage
-               if (e.code === 'permission-denied' || e.message.includes('permission')) {
-                 console.log("Permission denied. Falling back to local storage.");
-                 setSyncStatus('local');
-                 const savedData = localStorage.getItem(`pcpr_store_${firebaseUser.uid}`);
-                 if (savedData) setState(JSON.parse(savedData));
-               }
-             }
-          }
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      });
-      return () => unsubscribe();
-    } 
-    // DEMO / MOCK MODE
-    else {
-      console.log("Running in Demo Mode");
-      const checkMockAuth = async () => {
-        // Simulate loading time
-        await new Promise(r => setTimeout(r, 500));
-        
-        const savedUser = localStorage.getItem('pcpr_mock_auth');
-        if (savedUser) {
-          try {
-            const u = JSON.parse(savedUser);
-            setUser(u);
-            const savedData = localStorage.getItem(`pcpr_store_${u.uid}`);
-            if (savedData) setState(JSON.parse(savedData));
-          } catch(e) {
-            console.error("Demo data parse error", e);
-            localStorage.removeItem('pcpr_mock_auth');
-          }
-        }
-        setLoading(false);
-      };
-      checkMockAuth();
+    if (isDemo) {
+      setLoading(false);
+      return; 
     }
-  }, []);
-
-  // Sync state to Persistence (Firestore OR LocalStorage)
-  useEffect(() => {
-    if (user) {
-      if (isFirebaseConfigured && db) {
-        // If we already established we have no permission, don't try to save to cloud repeatedly
-        if (syncStatus === 'local') {
-          localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
-          return;
-        }
-
-        setSyncStatus('saving');
-        const saveToDb = async () => {
-           try {
-             // Sanitize state to remove undefined values which Firestore hates
-             const cleanState = JSON.parse(JSON.stringify(state));
-             await setDoc(doc(db, "users", user.uid), cleanState, { merge: true });
-             setSyncStatus('synced');
-           } catch (e: any) {
-             console.error("Error saving state:", e);
-             
-             // Handle Permission Denied gracefully
-             if (e.code === 'permission-denied' || e.message.includes('permission')) {
-                setSyncStatus('local');
-             } else {
-                setSyncStatus('error');
-             }
-             
-             // Silent fail or fallback save to local storage
-             localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
-           }
-        };
-        const handler = setTimeout(saveToDb, 1000);
-        return () => clearTimeout(handler);
-      } else {
-        // Save to LocalStorage in Demo Mode
-        localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
-      }
-    }
-  }, [state, user]);
-
-  // Separate Effect for Theme to ensure it always runs independently of DB sync
-  useEffect(() => {
-    if (state.theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [state.theme]);
-
-  const login = async (e: string, p: string) => {
-    if (isFirebaseConfigured && auth) {
-      await signInWithEmailAndPassword(auth, e, p);
-    } else {
-      // Mock Login
-      await new Promise(r => setTimeout(r, 800));
-      if (!e || !p) throw new Error("Preencha todos os campos (Demo)");
-      const u = { uid: 'demo-user-123', email: e };
-      localStorage.setItem('pcpr_mock_auth', JSON.stringify(u));
-      setUser(u);
-    }
-  };
-  
-  const register = async (e: string, p: string) => {
-    if (isFirebaseConfigured && auth) {
-      await createUserWithEmailAndPassword(auth, e, p);
-    } else {
-      // Mock Register
-      await new Promise(r => setTimeout(r, 800));
-      if (!e || !p) throw new Error("Preencha todos os campos (Demo)");
-      const u = { uid: 'demo-user-123', email: e };
-      localStorage.setItem('pcpr_mock_auth', JSON.stringify(u));
-      setUser(u);
-    }
-  };
-
-  const logout = () => {
-    if (isFirebaseConfigured && auth) {
-      signOut(auth);
-    } else {
-      localStorage.removeItem('pcpr_mock_auth');
-      setUser(null);
-    }
-  };
-
-  const updateState = (up: Partial<UserState>) => setState(s => ({...s, ...up}));
-
-  const addTime = (ids: string[], sec: number) => {
-    if (ids.length === 0) return;
-    const timePerSubject = Math.floor(sec / ids.length);
-    const now = new Date().toISOString();
     
-    setState(s => ({
-      ...s,
-      subjects: s.subjects.map(sub => 
-        ids.includes(sub.id) 
-          ? { 
-              ...sub, 
-              timeSpent: sub.timeSpent + timePerSubject,
-              lastStudied: now,
-              needsReview: true 
-            } 
-          : sub
-      )
-    }));
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({ uid: firebaseUser.uid, email: firebaseUser.email || '' });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [isDemo]);
+
+  const login = async (email: string, password: string) => {
+    if (isDemo) {
+      setUser({ uid: 'demo-user', email });
+      return;
+    }
+    await signInWithEmailAndPassword(auth, email, password);
+  };
+
+  const register = async (email: string, password: string) => {
+    if (isDemo) {
+      setUser({ uid: 'demo-user', email });
+      return;
+    }
+    await createUserWithEmailAndPassword(auth, email, password);
+  };
+
+  const logout = async () => {
+    if (isDemo) {
+      setUser(null);
+      return;
+    }
+    await signOut(auth);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, register, logout, isDemo }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+const StudyProvider = ({ children }: { children?: React.ReactNode }) => {
+  const { user, isDemo } = useAuth();
+  const [state, setState] = useState<UserState>({
+    subjects: INITIAL_SUBJECTS,
+    schedule: CRONOGRAMA_PADRAO,
+    pomodoroConfig: { focus: 25, short: 5, long: 15 },
+    theme: 'light',
+    timer: {
+      isActive: false,
+      timeLeft: 25 * 60,
+      totalTime: 25 * 60,
+      endTime: null,
+      selectedIds: []
+    }
+  });
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error' | 'local'>('idle');
+
+  // Load Data
+  useEffect(() => {
+    if (!user) return;
+    
+    const load = async () => {
+       if (isDemo) {
+          const saved = localStorage.getItem('apj_demo_data');
+          if (saved) setState(JSON.parse(saved));
+          setSyncStatus('local');
+          return;
+       }
+
+       try {
+         const docRef = doc(db, 'users', user.uid);
+         const docSnap = await getDoc(docRef);
+         if (docSnap.exists()) {
+           const data = docSnap.data() as UserState;
+           if (!data.timer) {
+             data.timer = { isActive: false, timeLeft: 25 * 60, totalTime: 25 * 60, endTime: null, selectedIds: [] };
+           }
+           setState(data);
+           setSyncStatus('synced');
+         } else {
+           await setDoc(docRef, state);
+           setSyncStatus('synced');
+         }
+       } catch (e) {
+         console.error(e);
+         setSyncStatus('error');
+       }
+    };
+    load();
+  }, [user, isDemo]);
+
+  // Sync Data
+  const saveData = async (newState: UserState) => {
+     setState(newState);
+     if (!user) return;
+
+     if (isDemo) {
+       localStorage.setItem('apj_demo_data', JSON.stringify(newState));
+       setSyncStatus('local');
+       return;
+     }
+
+     setSyncStatus('saving');
+     try {
+       // Only save when user explicitly changes state (not every tick of timer)
+       // Note: timer.isActive = true will save, but subsequent ticks are local only
+       const cleanState = JSON.parse(JSON.stringify(newState));
+       await setDoc(doc(db, 'users', user.uid), cleanState);
+       setSyncStatus('synced');
+     } catch (e) {
+       console.error(e);
+       setSyncStatus('error');
+     }
+  };
+
+  const updateState = (update: Partial<UserState>) => {
+    saveData({ ...state, ...update });
+  };
+
+  const addTime = (ids: string[], seconds: number) => {
+    const newSubjects = state.subjects.map(s => {
+      if (ids.includes(s.id)) {
+        return { 
+           ...s, 
+           timeSpent: s.timeSpent + seconds,
+           lastStudied: new Date().toISOString(),
+           needsReview: false 
+        };
+      }
+      return s;
+    });
+    saveData({ ...state, subjects: newSubjects });
   };
 
   const markReviewComplete = (id: string) => {
-    setState(s => ({
-      ...s,
-      subjects: s.subjects.map(sub => 
-        sub.id === id ? { ...sub, needsReview: false } : sub
-      )
-    }));
-  };
-
-  const addScheduleItem = (day: number, subject: string) => {
-    setState(s => {
-      const daySchedule = s.schedule[day] || [];
-      if (daySchedule.includes(subject)) return s;
-      return { ...s, schedule: { ...s.schedule, [day]: [...daySchedule, subject] } };
+    const newSubjects = state.subjects.map(s => {
+       if (s.id === id) return { ...s, needsReview: false, lastStudied: new Date().toISOString() };
+       return s;
     });
+    saveData({ ...state, subjects: newSubjects });
+  };
+  
+  const addScheduleItem = (day: number, subject: string) => {
+    const current = state.schedule[day] || [];
+    const newSchedule = { ...state.schedule, [day]: [...current, subject] };
+    saveData({ ...state, schedule: newSchedule });
   };
 
   const removeScheduleItem = (day: number, subject: string) => {
-    setState(s => ({ ...s, schedule: { ...s.schedule, [day]: (s.schedule[day] || []).filter(item => item !== subject) } }));
+    const current = state.schedule[day] || [];
+    const newSchedule = { ...state.schedule, [day]: current.filter(x => x !== subject) };
+    saveData({ ...state, schedule: newSchedule });
   };
 
-  const resetSchedule = () => setState(s => ({ ...s, schedule: CRONOGRAMA_PADRAO }));
+  const resetSchedule = () => {
+    saveData({ ...state, schedule: CRONOGRAMA_PADRAO });
+  };
 
-  const bulkUpdateSchedule = (newSchedule: Record<number, string[]>) => setState(s => ({ ...s, schedule: newSchedule }));
+  const bulkUpdateSchedule = (newSchedule: Record<number, string[]>) => {
+    saveData({ ...state, schedule: newSchedule });
+  };
 
   const updateSubjectData = (id: string, data: Partial<Subject>) => {
-    setState(s => ({...s, subjects: s.subjects.map(subj => subj.id === id ? {...subj, ...data} : subj)}));
+    const newSubjects = state.subjects.map(s => s.id === id ? { ...s, ...data } : s);
+    saveData({ ...state, subjects: newSubjects });
   };
 
   const addNewSubject = (discipline: string, topic: string) => {
-    const id = `${discipline.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
-    const newSubject: Subject = {
-      id,
+    const newId = `${discipline.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+    const newSub: Subject = {
+      id: newId,
       discipline,
       name: topic,
       relevance: 0,
       timeSpent: 0,
-      questionLink: "",
-      jurisprudencia: "", // Could potentially fetch default if needed, but leaving empty is safer
-      lastStudied: null,
-      needsReview: false
+      jurisprudencia: getInitialJuris(discipline, topic),
+      needsReview: false,
+      lastStudied: null
     };
-    setState(s => ({ ...s, subjects: [...s.subjects, newSubject] }));
+    saveData({ ...state, subjects: [...state.subjects, newSub] });
   };
 
-  if (loading) return (
-     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="animate-spin text-pcpr-blue w-12 h-12" />
-     </div>
-  );
+  // --- Timer Actions ---
+  const toggleTimer = () => {
+    const { isActive, timeLeft } = state.timer;
+    if (isActive) {
+       saveData({ ...state, timer: { ...state.timer, isActive: false, endTime: null }});
+    } else {
+       const newEndTime = Date.now() + (timeLeft * 1000);
+       saveData({ ...state, timer: { ...state.timer, isActive: true, endTime: newEndTime }});
+    }
+  };
 
-  if (!user) return <AuthContext.Provider value={{ user: null, loading, login, register, logout, isDemo: !isFirebaseConfigured }}><AuthScreen /></AuthContext.Provider>;
+  const resetTimer = () => {
+    saveData({ ...state, timer: { ...state.timer, isActive: false, endTime: null, timeLeft: state.timer.totalTime }});
+  };
+
+  const setTimerDuration = (seconds: number) => {
+    saveData({ ...state, timer: { ...state.timer, isActive: false, endTime: null, timeLeft: seconds, totalTime: seconds }});
+  };
+
+  const toggleSubjectSelection = (id: string) => {
+    const currentIds = state.timer.selectedIds;
+    const newIds = currentIds.includes(id) 
+       ? currentIds.filter(x => x !== id) 
+       : [...currentIds, id];
+    saveData({ ...state, timer: { ...state.timer, selectedIds: newIds }});
+  };
+
+  const stopAndCompute = () => {
+    const { totalTime, timeLeft, selectedIds } = state.timer;
+    const elapsed = totalTime - timeLeft;
+    
+    if (elapsed <= 0) {
+      alert("Nenhum tempo decorrido para computar.");
+      return;
+    }
+    if (selectedIds.length === 0) {
+      alert("Selecione ao menos um assunto para computar o tempo antes de parar.");
+      return;
+    }
+
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    
+    if (confirm(`Deseja interromper o cronômetro e salvar ${minutes}m ${seconds}s de estudo nos assuntos selecionados?`)) {
+      // Calculate new subjects state (distribute time)
+      const timePerSubject = Math.floor(elapsed / selectedIds.length);
+      const newSubjects = state.subjects.map(s => 
+        selectedIds.includes(s.id) 
+          ? { ...s, timeSpent: s.timeSpent + timePerSubject, lastStudied: new Date().toISOString(), needsReview: false }
+          : s
+      );
+
+      // Create reset timer state
+      const newTimer = { ...state.timer, isActive: false, endTime: null, timeLeft: state.timer.totalTime, selectedIds: [] };
+
+      // ATOMIC UPDATE: Save both subjects and timer reset together
+      saveData({ 
+        ...state, 
+        subjects: newSubjects,
+        timer: newTimer
+      });
+    }
+  };
+
+  // --- Timer Logic (Global Interval) ---
+  useEffect(() => {
+    let interval: any;
+    if (state.timer.isActive && state.timer.endTime) {
+      interval = setInterval(() => {
+        const now = Date.now();
+        const diff = Math.ceil((state.timer.endTime! - now) / 1000);
+
+        if (diff <= 0) {
+           // Timer Finished
+           const { selectedIds, totalTime } = state.timer;
+           
+           if (selectedIds.length > 0) {
+             const timePerSubject = Math.floor(totalTime / selectedIds.length);
+             const newSubjects = state.subjects.map(s => 
+                selectedIds.includes(s.id) 
+                  ? { ...s, timeSpent: s.timeSpent + timePerSubject, lastStudied: new Date().toISOString(), needsReview: false }
+                  : s
+             );
+             
+             alert("Sessão finalizada! O tempo foi computado.");
+             // ATOMIC UPDATE
+             saveData({ 
+               ...state, 
+               subjects: newSubjects,
+               timer: { ...state.timer, isActive: false, endTime: null, timeLeft: 0, selectedIds: [] }
+             });
+           } else {
+             alert("Sessão finalizada (Pausa).");
+             saveData({ ...state, timer: { ...state.timer, isActive: false, endTime: null, timeLeft: 0 }});
+           }
+        } else {
+           // Tick - Update local state ONLY (do not save to DB every second)
+           setState(prev => ({ 
+             ...prev, 
+             timer: { ...prev.timer, timeLeft: diff } 
+           }));
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [state.timer.isActive, state.timer.endTime]);
+
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, isDemo: !isFirebaseConfigured }}>
-      <StudyContext.Provider value={{ 
-        state, 
-        updateState,
-        addTime,
-        markReviewComplete,
-        addScheduleItem,
-        removeScheduleItem,
-        resetSchedule,
-        bulkUpdateSchedule,
-        updateSubjectData,
-        addNewSubject,
-        syncStatus
-      }}>
-        <Router>
-          <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-500">
-            <Sidebar />
-            <main className="flex-grow pl-20 lg:pl-72 p-6 lg:p-10">
-              <div className="max-w-[1600px] mx-auto">
-                <Routes>
-                  <Route path="/" element={<Navigate to={isPreview ? "/sitemap" : "/dashboard"} replace />} />
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/pomodoro" element={<Pomodoro />} />
-                  <Route path="/edital" element={<Edital />} />
-                  <Route path="/schedule" element={<Schedule />} />
-                  <Route path="/sitemap" element={<Sitemap />} />
-                  <Route path="*" element={<Navigate to="/" />} />
-                </Routes>
-              </div>
-            </main>
-          </div>
-        </Router>
-      </StudyContext.Provider>
-    </AuthContext.Provider>
+    <StudyContext.Provider value={{
+      state, updateState, addTime, markReviewComplete,
+      addScheduleItem, removeScheduleItem, resetSchedule, bulkUpdateSchedule,
+      updateSubjectData, addNewSubject, syncStatus,
+      timerActions: { toggleTimer, resetTimer, setTimerDuration, toggleSubjectSelection, stopAndCompute }
+    }}>
+      {children}
+    </StudyContext.Provider>
+  );
+};
+
+const MainLayout = () => {
+  const { state } = useStudy();
+  
+  return (
+    <div className={`min-h-screen transition-colors duration-300 ${state.theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
+      <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-100 font-sans">
+        <Sidebar />
+        <main className="flex-grow ml-20 lg:ml-72 p-6 lg:p-10 overflow-y-auto custom-scrollbar">
+           <Routes>
+             <Route path="/dashboard" element={<Dashboard />} />
+             <Route path="/pomodoro" element={<Pomodoro />} />
+             <Route path="/edital" element={<Edital />} />
+             <Route path="/schedule" element={<Schedule />} />
+             <Route path="/sitemap" element={<Sitemap />} />
+             <Route path="/" element={<Navigate to="/dashboard" replace />} />
+             <Route path="*" element={<Navigate to="/dashboard" replace />} />
+           </Routes>
+        </main>
+      </div>
+    </div>
+  );
+};
+
+const AppRoutes = () => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <Loader2 className="animate-spin text-pcpr-blue" size={48} />
+      </div>
+    );
+  }
+
+  return user ? <MainLayout /> : <AuthScreen />;
+};
+
+const App = () => {
+  const isPreview = checkPreviewEnvironment();
+  
+  const content = (
+    <AuthProvider>
+      <StudyProvider>
+        <AppRoutes />
+      </StudyProvider>
+    </AuthProvider>
+  );
+
+  if (isPreview) {
+    return (
+      <HashRouter>
+        {content}
+      </HashRouter>
+    );
+  }
+  
+  return (
+    <BrowserRouter>
+      {content}
+    </BrowserRouter>
   );
 };
 
