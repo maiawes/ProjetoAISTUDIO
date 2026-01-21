@@ -1,4 +1,5 @@
-import React, { useState, useEffect, createContext, useContext, useRef, useMemo } from 'react';
+
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Timer, BookOpen, Calendar, LogOut, Moon, Sun, 
@@ -6,7 +7,7 @@ import {
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
   X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter,
   Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff, Cloud, CloudOff, CloudUpload, HardDrive,
-  Square, Edit3, Layers
+  Square, Edit3
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -1001,7 +1002,7 @@ const Schedule = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCycleModalOpen, setIsCycleModalOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState(1);
-  const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedSubject, setSelectedSubject] = useState(DISCIPLINE_DATA[0].materia);
 
   const [cycleDisciplines, setCycleDisciplines] = useState<string[]>([]);
   const [cycleDays, setCycleDays] = useState<number[]>([1, 2, 3, 4, 5]);
@@ -1012,33 +1013,10 @@ const Schedule = () => {
   const currentDayIndex = now.getDay();
   const formattedDate = now.toLocaleDateString('pt-BR');
 
-  // Compute available topics grouped by discipline
-  const subjectsByDiscipline = useMemo(() => {
-    const groups: Record<string, string[]> = {};
-    state.subjects.forEach(s => {
-      if (!groups[s.discipline]) groups[s.discipline] = [];
-      groups[s.discipline].push(s.name);
-    });
-    
-    const sortedDisciplines = Object.keys(groups).sort();
-    sortedDisciplines.forEach(d => {
-      groups[d].sort();
-    });
-    
-    return { sortedDisciplines, groups };
-  }, [state.subjects]);
-
-  // Set default subject when modal opens or groups change
-  useEffect(() => {
-    if (subjectsByDiscipline.sortedDisciplines.length > 0 && !selectedSubject) {
-       const firstDisc = subjectsByDiscipline.sortedDisciplines[0];
-       const firstTopic = subjectsByDiscipline.groups[firstDisc][0];
-       setSelectedSubject(firstTopic);
-    }
-  }, [subjectsByDiscipline, selectedSubject]);
+  // Compute available disciplines dynamically from state instead of static DISCIPLINE_DATA
+  const availableDisciplines = Array.from(new Set(state.subjects.map(s => s.discipline))).sort();
 
   const handleAdd = () => {
-    if (!selectedSubject) return;
     addScheduleItem(selectedDay, selectedSubject);
     setIsModalOpen(false);
   };
@@ -1059,24 +1037,6 @@ const Schedule = () => {
     });
     bulkUpdateSchedule(newSchedule);
     setIsCycleModalOpen(false);
-  };
-
-  const toggleCycleItem = (item: string) => {
-    setCycleDisciplines(prev => prev.includes(item) ? prev.filter(x => x !== item) : [...prev, item]);
-  };
-
-  const toggleGroupInCycle = (discipline: string) => {
-    const topics = subjectsByDiscipline.groups[discipline];
-    const allSelected = topics.every(t => cycleDisciplines.includes(t));
-    
-    if (allSelected) {
-      setCycleDisciplines(prev => prev.filter(t => !topics.includes(t)));
-    } else {
-      setCycleDisciplines(prev => {
-        const unique = new Set([...prev, ...topics]);
-        return Array.from(unique);
-      });
-    }
   };
 
   return (
@@ -1129,43 +1089,20 @@ const Schedule = () => {
       {/* Cycle Modal */}
       {isCycleModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200 overflow-y-auto">
-           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] w-full max-w-4xl shadow-2xl border border-white/10 my-8">
+           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] w-full max-w-2xl shadow-2xl border border-white/10 my-8">
               <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black tracking-tight">Gerador de Ciclo Automático</h3>
                 <button onClick={() => setIsCycleModalOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X /></button>
               </div>
               <div className="space-y-8">
                 <div>
-                  <label className="block text-[11px] font-black uppercase text-slate-400 mb-4 tracking-widest">1. Selecione os Tópicos (Agrupados por Disciplina)</label>
-                  <div className="h-80 overflow-y-auto custom-scrollbar pr-2 space-y-6">
-                    {subjectsByDiscipline.sortedDisciplines.map(discipline => {
-                      const topics = subjectsByDiscipline.groups[discipline];
-                      const allSelected = topics.every(t => cycleDisciplines.includes(t));
-                      return (
-                        <div key={discipline} className="bg-slate-50 dark:bg-slate-800 p-6 rounded-3xl border border-slate-100 dark:border-slate-700">
-                          <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-black text-pcpr-blue dark:text-blue-400 text-sm uppercase">{discipline}</h4>
-                            <button 
-                              onClick={() => toggleGroupInCycle(discipline)}
-                              className="text-[10px] font-bold px-3 py-1 bg-white dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-                            >
-                              {allSelected ? "Desmarcar Todos" : "Selecionar Todos"}
-                            </button>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {topics.map(topic => (
-                              <button 
-                                key={topic} 
-                                onClick={() => toggleCycleItem(topic)} 
-                                className={`px-3 py-2 rounded-xl text-[10px] font-bold text-left border transition-all ${cycleDisciplines.includes(topic) ? 'bg-pcpr-blue text-white border-pcpr-blue' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500'}`}
-                              >
-                                {topic}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
+                  <label className="block text-[11px] font-black uppercase text-slate-400 mb-4 tracking-widest">1. Selecione Matérias</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {availableDisciplines.map(d => (
+                      <button key={d} onClick={() => setCycleDisciplines(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d])} className={`p-3 rounded-2xl text-[10px] font-bold text-left border ${cycleDisciplines.includes(d) ? 'bg-pcpr-blue text-white' : 'bg-slate-50 dark:bg-slate-800'}`}>
+                        {d}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -1226,19 +1163,13 @@ const Schedule = () => {
                  </div>
 
                  <div>
-                    <label className="block text-[11px] font-black uppercase text-slate-400 mb-2 tracking-widest">Matéria / Assunto</label>
+                    <label className="block text-[11px] font-black uppercase text-slate-400 mb-2 tracking-widest">Matéria</label>
                     <select 
                       value={selectedSubject} 
                       onChange={e => setSelectedSubject(e.target.value)}
                       className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold text-sm border-2 border-transparent focus:border-pcpr-blue outline-none appearance-none"
                     >
-                       {subjectsByDiscipline.sortedDisciplines.map(discipline => (
-                         <optgroup key={discipline} label={discipline}>
-                           {subjectsByDiscipline.groups[discipline].map(topic => (
-                             <option key={topic} value={topic}>{topic}</option>
-                           ))}
-                         </optgroup>
-                       ))}
+                       {availableDisciplines.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
                  </div>
 
@@ -1254,343 +1185,347 @@ const Schedule = () => {
 };
 
 const AuthScreen = () => {
-  const { login, register, loading } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
   const [error, setError] = useState('');
+  const { login, register, isDemo } = useAuth();
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setError('');
+    setLoading(true);
     try {
-      if (isLogin) {
-        await login(email, password);
-      } else {
+      if (isRegistering) {
         await register(email, password);
+      } else {
+        await login(email, password);
       }
-    } catch (err: any) {
-      setError(err.message || 'Ocorreu um erro.');
+    } catch (e: any) {
+      console.error(e);
+      setError(e.message || "Erro de autenticação.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-900 p-4">
-      <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-xl w-full max-w-md border border-slate-200 dark:border-slate-700">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-pcpr-blue rounded-2xl flex items-center justify-center text-white mx-auto mb-4 shadow-lg">
-            <User size={32} />
-          </div>
-          <h2 className="text-2xl font-black text-slate-800 dark:text-white">APJ PCPR</h2>
-          <p className="text-sm font-bold text-slate-500">Acesso Restrito</p>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6 relative overflow-hidden text-center">
+      <div className="w-full max-w-md bg-white p-10 rounded-[3rem] shadow-2xl relative z-10 animate-in zoom-in-95 duration-500 border border-slate-100">
+        <div className="w-20 h-20 bg-pcpr-blue mx-auto rounded-3xl flex items-center justify-center text-white mb-6 shadow-xl shadow-blue-500/20">
+          <Gavel size={40} />
         </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center gap-2">
-            <AlertTriangle size={16} /> {error}
+        <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-900">
+          {isRegistering ? 'Nova Conta' : 'Login Candidato'}
+        </h1>
+        <p className="text-slate-500 text-sm font-bold mt-2 mb-8">Hub de Estudos PCPR 2025</p>
+        
+        {isDemo && (
+          <div className="bg-amber-100 text-amber-700 p-3 rounded-xl text-xs font-bold mb-6 flex items-center justify-center gap-2">
+            <WifiOff size={14} /> Modo Demo Ativo (Offline)
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="text-xs font-black uppercase text-slate-400 ml-1">Email</label>
-            <div className="flex items-center bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mt-1">
-              <Mail size={18} className="text-slate-400 mr-2" />
-              <input 
-                type="email" 
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="bg-transparent w-full text-sm font-bold outline-none text-slate-700 dark:text-slate-200"
-                placeholder="seu@email.com"
-                required
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-black uppercase text-slate-400 ml-1">Senha</label>
-            <div className="flex items-center bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mt-1">
-              <Lock size={18} className="text-slate-400 mr-2" />
-              <input 
-                type="password" 
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="bg-transparent w-full text-sm font-bold outline-none text-slate-700 dark:text-slate-200"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-          </div>
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full py-4 bg-pcpr-blue text-white rounded-xl font-black uppercase text-sm shadow-lg shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all flex justify-center items-center gap-2"
-          >
-            {loading && <Loader2 size={18} className="animate-spin" />}
-            {isLogin ? 'Entrar' : 'Cadastrar'}
-          </button>
-        </form>
+        {error && <div className="bg-red-50 text-red-500 p-3 rounded-xl text-xs font-bold mb-4 border border-red-100">{error}</div>}
 
-        <div className="mt-6 text-center">
-          <button 
-            onClick={() => { setIsLogin(!isLogin); setError(''); }}
-            className="text-xs font-bold text-slate-500 hover:text-pcpr-blue transition-colors"
-          >
-            {isLogin ? 'Criar uma conta nova' : 'Já possuo conta'}
+        <div className="space-y-4">
+          <input type="email" placeholder="E-mail" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800 placeholder:text-slate-400" />
+          <input type="password" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 outline-none font-bold focus:ring-2 focus:ring-pcpr-blue text-slate-800 placeholder:text-slate-400" />
+          
+          <button onClick={handleSubmit} disabled={loading} className="w-full bg-pcpr-blue text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center disabled:opacity-50">
+             {loading ? <Loader2 className="animate-spin" /> : (isRegistering ? 'Criar Conta' : 'Entrar no Hub')}
           </button>
+
+          <button onClick={() => setIsRegistering(!isRegistering)} className="text-slate-400 text-xs font-bold hover:text-pcpr-blue mt-4">
+            {isRegistering ? 'Já tem conta? Entrar' : 'Não tem conta? Cadastrar'}
+          </button>
+        </div>
+        
+        <div className="mt-8 pt-6 border-t border-slate-100">
+           <p className="text-[10px] text-slate-400 font-medium">
+             {isDemo ? 'Running in Simulated Mode' : 'Database Integration Active'}
+           </p>
         </div>
       </div>
     </div>
   );
 };
 
-const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+// --- App Root ---
+
+const App: React.FC = () => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
-  // If API Key is placeholder, force demo mode
-  const isDemo = !isFirebaseConfigured; 
-
-  useEffect(() => {
-    if (isDemo) {
-      // Demo mode: Mock user
-      setLoading(false);
-      return; 
-    }
-    
-    // Real Firebase Auth
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        setUser({ uid: firebaseUser.uid, email: firebaseUser.email || '' });
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [isDemo]);
-
-  const login = async (email: string, password: string) => {
-    if (isDemo) {
-      setUser({ uid: 'demo-user', email });
-      return;
-    }
-    await signInWithEmailAndPassword(auth, email, password);
-  };
-
-  const register = async (email: string, password: string) => {
-    if (isDemo) {
-      setUser({ uid: 'demo-user', email });
-      return;
-    }
-    await createUserWithEmailAndPassword(auth, email, password);
-  };
-
-  const logout = async () => {
-    if (isDemo) {
-      setUser(null);
-      return;
-    }
-    await signOut(auth);
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, isDemo }}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
-
-const StudyProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user, isDemo } = useAuth();
-  const [state, setState] = useState<UserState>({
-    subjects: INITIAL_SUBJECTS,
-    schedule: CRONOGRAMA_PADRAO,
-    pomodoroConfig: { focus: 25, short: 5, long: 15 },
-    theme: 'light'
-  });
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'error' | 'local'>('idle');
+  const isPreview = checkPreviewEnvironment();
+  const Router = isPreview ? HashRouter : BrowserRouter;
 
-  // Load Data
-  useEffect(() => {
-    if (!user) return;
-    
-    const load = async () => {
-       if (isDemo) {
-          const saved = localStorage.getItem('apj_demo_data');
-          if (saved) setState(JSON.parse(saved));
-          setSyncStatus('local');
-          return;
-       }
-
-       try {
-         const docRef = doc(db, 'users', user.uid);
-         const docSnap = await getDoc(docRef);
-         if (docSnap.exists()) {
-           setState(docSnap.data() as UserState);
-           setSyncStatus('synced');
-         } else {
-           // Initialize new user
-           await setDoc(docRef, state);
-           setSyncStatus('synced');
-         }
-       } catch (e) {
-         console.error(e);
-         setSyncStatus('error');
-       }
+  const [state, setState] = useState<UserState>(() => {
+    // Fallback initial state if not logged in yet or no DB connection
+    return { 
+      subjects: INITIAL_SUBJECTS, 
+      schedule: CRONOGRAMA_PADRAO,
+      pomodoroConfig: { focus: 25, short: 5, long: 15 }, 
+      theme: 'light' 
     };
-    load();
-  }, [user, isDemo]);
+  });
 
-  // Sync Data
-  const saveData = async (newState: UserState) => {
-     setState(newState);
-     if (!user) return;
+  // Auth Listener & Data Fetching
+  useEffect(() => {
+    // REAL FIREBASE MODE
+    if (isFirebaseConfigured && auth) {
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+        if (firebaseUser) {
+          setUser({ uid: firebaseUser.uid, email: firebaseUser.email || '' });
+          
+          if (db) {
+             try {
+               const docRef = doc(db, "users", firebaseUser.uid);
+               const docSnap = await getDoc(docRef);
+               if (docSnap.exists()) {
+                 setState(docSnap.data() as UserState);
+               } else {
+                 // Remove undefined values before initial save
+                 const cleanState = JSON.parse(JSON.stringify(state));
+                 await setDoc(docRef, cleanState);
+               }
+             } catch (e: any) {
+               console.error("Error fetching data:", e);
+               // Permission error or other failures -> Fallback to local storage
+               if (e.code === 'permission-denied' || e.message.includes('permission')) {
+                 console.log("Permission denied. Falling back to local storage.");
+                 setSyncStatus('local');
+                 const savedData = localStorage.getItem(`pcpr_store_${firebaseUser.uid}`);
+                 if (savedData) setState(JSON.parse(savedData));
+               }
+             }
+          }
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } 
+    // DEMO / MOCK MODE
+    else {
+      console.log("Running in Demo Mode");
+      const checkMockAuth = async () => {
+        // Simulate loading time
+        await new Promise(r => setTimeout(r, 500));
+        
+        const savedUser = localStorage.getItem('pcpr_mock_auth');
+        if (savedUser) {
+          try {
+            const u = JSON.parse(savedUser);
+            setUser(u);
+            const savedData = localStorage.getItem(`pcpr_store_${u.uid}`);
+            if (savedData) setState(JSON.parse(savedData));
+          } catch(e) {
+            console.error("Demo data parse error", e);
+            localStorage.removeItem('pcpr_mock_auth');
+          }
+        }
+        setLoading(false);
+      };
+      checkMockAuth();
+    }
+  }, []);
 
-     if (isDemo) {
-       localStorage.setItem('apj_demo_data', JSON.stringify(newState));
-       setSyncStatus('local');
-       return;
-     }
+  // Sync state to Persistence (Firestore OR LocalStorage)
+  useEffect(() => {
+    if (user) {
+      if (isFirebaseConfigured && db) {
+        // If we already established we have no permission, don't try to save to cloud repeatedly
+        if (syncStatus === 'local') {
+          localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
+          return;
+        }
 
-     setSyncStatus('saving');
-     try {
-       await setDoc(doc(db, 'users', user.uid), newState);
-       setSyncStatus('synced');
-     } catch (e) {
-       console.error(e);
-       setSyncStatus('error');
-     }
-  };
-
-  // Actions
-  const updateState = (update: Partial<UserState>) => {
-    saveData({ ...state, ...update });
-  };
-
-  const addTime = (ids: string[], seconds: number) => {
-    const newSubjects = state.subjects.map(s => {
-      if (ids.includes(s.id)) {
-        return { 
-           ...s, 
-           timeSpent: s.timeSpent + seconds,
-           lastStudied: new Date().toISOString(),
-           needsReview: false // Reset review flag when studied
+        setSyncStatus('saving');
+        const saveToDb = async () => {
+           try {
+             // Sanitize state to remove undefined values which Firestore hates
+             const cleanState = JSON.parse(JSON.stringify(state));
+             await setDoc(doc(db, "users", user.uid), cleanState, { merge: true });
+             setSyncStatus('synced');
+           } catch (e: any) {
+             console.error("Error saving state:", e);
+             
+             // Handle Permission Denied gracefully
+             if (e.code === 'permission-denied' || e.message.includes('permission')) {
+                setSyncStatus('local');
+             } else {
+                setSyncStatus('error');
+             }
+             
+             // Silent fail or fallback save to local storage
+             localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
+           }
         };
+        const handler = setTimeout(saveToDb, 1000);
+        return () => clearTimeout(handler);
+      } else {
+        // Save to LocalStorage in Demo Mode
+        localStorage.setItem(`pcpr_store_${user.uid}`, JSON.stringify(state));
       }
-      return s;
-    });
-    saveData({ ...state, subjects: newSubjects });
+    }
+  }, [state, user]);
+
+  // Separate Effect for Theme to ensure it always runs independently of DB sync
+  useEffect(() => {
+    if (state.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [state.theme]);
+
+  const login = async (e: string, p: string) => {
+    if (isFirebaseConfigured && auth) {
+      await signInWithEmailAndPassword(auth, e, p);
+    } else {
+      // Mock Login
+      await new Promise(r => setTimeout(r, 800));
+      if (!e || !p) throw new Error("Preencha todos os campos (Demo)");
+      const u = { uid: 'demo-user-123', email: e };
+      localStorage.setItem('pcpr_mock_auth', JSON.stringify(u));
+      setUser(u);
+    }
+  };
+  
+  const register = async (e: string, p: string) => {
+    if (isFirebaseConfigured && auth) {
+      await createUserWithEmailAndPassword(auth, e, p);
+    } else {
+      // Mock Register
+      await new Promise(r => setTimeout(r, 800));
+      if (!e || !p) throw new Error("Preencha todos os campos (Demo)");
+      const u = { uid: 'demo-user-123', email: e };
+      localStorage.setItem('pcpr_mock_auth', JSON.stringify(u));
+      setUser(u);
+    }
+  };
+
+  const logout = () => {
+    if (isFirebaseConfigured && auth) {
+      signOut(auth);
+    } else {
+      localStorage.removeItem('pcpr_mock_auth');
+      setUser(null);
+    }
+  };
+
+  const updateState = (up: Partial<UserState>) => setState(s => ({...s, ...up}));
+
+  const addTime = (ids: string[], sec: number) => {
+    if (ids.length === 0) return;
+    const timePerSubject = Math.floor(sec / ids.length);
+    const now = new Date().toISOString();
+    
+    setState(s => ({
+      ...s,
+      subjects: s.subjects.map(sub => 
+        ids.includes(sub.id) 
+          ? { 
+              ...sub, 
+              timeSpent: sub.timeSpent + timePerSubject,
+              lastStudied: now,
+              needsReview: true 
+            } 
+          : sub
+      )
+    }));
   };
 
   const markReviewComplete = (id: string) => {
-    const newSubjects = state.subjects.map(s => {
-       if (s.id === id) return { ...s, needsReview: false, lastStudied: new Date().toISOString() };
-       return s;
-    });
-    saveData({ ...state, subjects: newSubjects });
+    setState(s => ({
+      ...s,
+      subjects: s.subjects.map(sub => 
+        sub.id === id ? { ...sub, needsReview: false } : sub
+      )
+    }));
   };
-  
+
   const addScheduleItem = (day: number, subject: string) => {
-    const current = state.schedule[day] || [];
-    const newSchedule = { ...state.schedule, [day]: [...current, subject] };
-    saveData({ ...state, schedule: newSchedule });
+    setState(s => {
+      const daySchedule = s.schedule[day] || [];
+      if (daySchedule.includes(subject)) return s;
+      return { ...s, schedule: { ...s.schedule, [day]: [...daySchedule, subject] } };
+    });
   };
 
   const removeScheduleItem = (day: number, subject: string) => {
-    const current = state.schedule[day] || [];
-    const newSchedule = { ...state.schedule, [day]: current.filter(x => x !== subject) };
-    saveData({ ...state, schedule: newSchedule });
+    setState(s => ({ ...s, schedule: { ...s.schedule, [day]: (s.schedule[day] || []).filter(item => item !== subject) } }));
   };
 
-  const resetSchedule = () => {
-    saveData({ ...state, schedule: CRONOGRAMA_PADRAO });
-  };
+  const resetSchedule = () => setState(s => ({ ...s, schedule: CRONOGRAMA_PADRAO }));
 
-  const bulkUpdateSchedule = (newSchedule: Record<number, string[]>) => {
-    saveData({ ...state, schedule: newSchedule });
-  };
+  const bulkUpdateSchedule = (newSchedule: Record<number, string[]>) => setState(s => ({ ...s, schedule: newSchedule }));
 
   const updateSubjectData = (id: string, data: Partial<Subject>) => {
-    const newSubjects = state.subjects.map(s => s.id === id ? { ...s, ...data } : s);
-    saveData({ ...state, subjects: newSubjects });
+    setState(s => ({...s, subjects: s.subjects.map(subj => subj.id === id ? {...subj, ...data} : subj)}));
   };
 
   const addNewSubject = (discipline: string, topic: string) => {
-    const newId = `${discipline.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
-    const newSub: Subject = {
-      id: newId,
+    const id = `${discipline.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+    const newSubject: Subject = {
+      id,
       discipline,
       name: topic,
       relevance: 0,
       timeSpent: 0,
-      jurisprudencia: getInitialJuris(discipline, topic),
-      needsReview: false,
-      lastStudied: null
+      questionLink: "",
+      jurisprudencia: "", // Could potentially fetch default if needed, but leaving empty is safer
+      lastStudied: null,
+      needsReview: false
     };
-    saveData({ ...state, subjects: [...state.subjects, newSub] });
+    setState(s => ({ ...s, subjects: [...s.subjects, newSubject] }));
   };
 
-  return (
-    <StudyContext.Provider value={{
-      state, updateState, addTime, markReviewComplete,
-      addScheduleItem, removeScheduleItem, resetSchedule, bulkUpdateSchedule,
-      updateSubjectData, addNewSubject, syncStatus
-    }}>
-      {children}
-    </StudyContext.Provider>
+  if (loading) return (
+     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Loader2 className="animate-spin text-pcpr-blue w-12 h-12" />
+     </div>
   );
-};
 
-const MainLayout = () => {
-  const { state } = useStudy();
-  
+  if (!user) return <AuthContext.Provider value={{ user: null, loading, login, register, logout, isDemo: !isFirebaseConfigured }}><AuthScreen /></AuthContext.Provider>;
+
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${state.theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
-      <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-100 font-sans">
-        <Sidebar />
-        <main className="flex-grow ml-20 lg:ml-72 p-6 lg:p-10 overflow-y-auto custom-scrollbar">
-           <Routes>
-             <Route path="/dashboard" element={<Dashboard />} />
-             <Route path="/pomodoro" element={<Pomodoro />} />
-             <Route path="/edital" element={<Edital />} />
-             <Route path="/schedule" element={<Schedule />} />
-             <Route path="/sitemap" element={<Sitemap />} />
-             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-             <Route path="*" element={<Navigate to="/dashboard" replace />} />
-           </Routes>
-        </main>
-      </div>
-    </div>
-  );
-};
-
-const AppRoutes = () => {
-  const { user, loading } = useAuth();
-  
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
-        <Loader2 className="animate-spin text-pcpr-blue" size={48} />
-      </div>
-    );
-  }
-
-  return user ? <MainLayout /> : <AuthScreen />;
-};
-
-const App = () => {
-  // Use HashRouter for environments like StackBlitz/WebContainer to avoid 404s on refresh
-  const isPreview = checkPreviewEnvironment();
-  const Router = isPreview ? HashRouter : BrowserRouter;
-  
-  return (
-    <Router>
-      <AuthProvider>
-        <StudyProvider>
-          <AppRoutes />
-        </StudyProvider>
-      </AuthProvider>
-    </Router>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, isDemo: !isFirebaseConfigured }}>
+      <StudyContext.Provider value={{ 
+        state, 
+        updateState,
+        addTime,
+        markReviewComplete,
+        addScheduleItem,
+        removeScheduleItem,
+        resetSchedule,
+        bulkUpdateSchedule,
+        updateSubjectData,
+        addNewSubject,
+        syncStatus
+      }}>
+        <Router>
+          <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-500">
+            <Sidebar />
+            <main className="flex-grow pl-20 lg:pl-72 p-6 lg:p-10">
+              <div className="max-w-[1600px] mx-auto">
+                <Routes>
+                  <Route path="/" element={<Navigate to={isPreview ? "/sitemap" : "/dashboard"} replace />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/pomodoro" element={<Pomodoro />} />
+                  <Route path="/edital" element={<Edital />} />
+                  <Route path="/schedule" element={<Schedule />} />
+                  <Route path="/sitemap" element={<Sitemap />} />
+                  <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+              </div>
+            </main>
+          </div>
+        </Router>
+      </StudyContext.Provider>
+    </AuthContext.Provider>
   );
 };
 
