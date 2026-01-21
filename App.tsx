@@ -7,7 +7,7 @@ import {
   ChevronDown, User, Mail, Lock, CheckCircle, AlertTriangle, Plus, PlusCircle,
   X, RefreshCw, Zap, Settings2, Check, Scale, Globe, Bell, ListChecks, Filter,
   Coffee, Brain, Gamepad2, ArrowRight, Loader2, Save, WifiOff, Cloud, CloudOff, CloudUpload, HardDrive,
-  Square
+  Square, Edit3
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -718,6 +718,9 @@ const Edital = () => {
   const [newTopic, setNewTopic] = useState("");
   const [isCustomDiscipline, setIsCustomDiscipline] = useState(false);
 
+  // State for editing jurisprudence
+  const [editingJuris, setEditingJuris] = useState<{id: string, name: string, text: string} | null>(null);
+
   const disciplines = Array.from(new Set<string>(state.subjects.map(s => s.discipline)));
 
   const toggleDiscipline = (disc: string) => {
@@ -733,6 +736,21 @@ const Edital = () => {
     setIsAddModalOpen(false);
     setNewTopic("");
     // We keep the discipline to make it easier to add multiple topics to same discipline
+  };
+
+  const openEditJuris = (s: Subject) => {
+    setEditingJuris({
+      id: s.id,
+      name: s.name,
+      text: s.jurisprudencia || ""
+    });
+  };
+
+  const saveJurisprudence = () => {
+    if (editingJuris) {
+      updateSubjectData(editingJuris.id, { jurisprudencia: editingJuris.text });
+      setEditingJuris(null);
+    }
   };
 
   return (
@@ -795,14 +813,32 @@ const Edital = () => {
                           </div>
                         </div>
                         <div className="flex flex-wrap items-center gap-3 mt-4 xl:mt-0">
-                           {s.jurisprudencia && (
-                             <button 
-                               onClick={() => setModalJuris({title: s.name, content: s.jurisprudencia || "Nenhuma decisão cadastrada para este tema."})}
-                               className="flex items-center gap-2 px-6 py-3 bg-pcpr-gold text-white rounded-xl font-black text-[10px] uppercase shadow-lg shadow-yellow-500/20 hover:scale-105 transition-all"
-                             >
-                               <Scale size={14} /> Tribunais
-                             </button>
-                           )}
+                           <div className="flex items-center gap-2">
+                             {s.jurisprudencia ? (
+                               <>
+                                 <button 
+                                   onClick={() => setModalJuris({title: s.name, content: s.jurisprudencia || ""})}
+                                   className="flex items-center gap-2 px-6 py-3 bg-pcpr-gold text-white rounded-xl font-black text-[10px] uppercase shadow-lg shadow-yellow-500/20 hover:scale-105 transition-all"
+                                 >
+                                   <Scale size={14} /> Ver Juris
+                                 </button>
+                                 <button 
+                                   onClick={() => openEditJuris(s)}
+                                   className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-pcpr-blue rounded-xl transition-colors"
+                                   title="Editar Jurisprudência"
+                                 >
+                                   <Edit3 size={14} />
+                                 </button>
+                               </>
+                             ) : (
+                               <button 
+                                 onClick={() => openEditJuris(s)}
+                                 className="flex items-center gap-2 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-xl font-black text-[10px] uppercase hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                               >
+                                 <Plus size={14} /> Add Juris
+                               </button>
+                             )}
+                           </div>
                            <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-center">
                              <p className="text-[10px] font-black text-slate-400 uppercase">Horas</p>
                              <p className="font-bold text-xs">{Math.floor(s.timeSpent/3600)}h</p>
@@ -863,6 +899,42 @@ const Edital = () => {
                 <p className="text-[10px] font-black text-slate-400 uppercase text-center italic">Hub atualizado com informativos 2024/2025</p>
              </div>
           </div>
+        </div>
+      )}
+
+      {/* Edit Jurisprudence Modal */}
+      {editingJuris && (
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
+           <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] w-full max-w-2xl shadow-2xl border border-white/10">
+              <div className="flex justify-between items-center mb-6">
+                 <div>
+                   <h3 className="text-xl font-black tracking-tight">Editar Jurisprudência</h3>
+                   <p className="text-xs text-slate-400 font-bold">{editingJuris.name}</p>
+                 </div>
+                 <button onClick={() => setEditingJuris(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
+              </div>
+              
+              <div className="space-y-6">
+                 <div>
+                    <label className="block text-[11px] font-black uppercase text-slate-400 mb-2 tracking-widest">Texto da Jurisprudência / Súmulas</label>
+                    <textarea 
+                      placeholder="Cole aqui as decisões, súmulas ou informativos relevantes..."
+                      value={editingJuris.text}
+                      onChange={e => setEditingJuris({...editingJuris, text: e.target.value})}
+                      className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-medium text-sm border-2 border-transparent focus:border-pcpr-blue outline-none h-64 resize-none leading-relaxed custom-scrollbar"
+                    />
+                 </div>
+
+                 <div className="flex gap-4">
+                   <button onClick={() => setEditingJuris(null)} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-4 rounded-2xl font-black text-sm uppercase hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
+                     Cancelar
+                   </button>
+                   <button onClick={saveJurisprudence} className="flex-1 bg-pcpr-blue text-white py-4 rounded-2xl font-black text-sm uppercase shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2">
+                     <Save size={18} /> Salvar Alterações
+                   </button>
+                 </div>
+              </div>
+           </div>
         </div>
       )}
 
