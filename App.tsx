@@ -758,9 +758,11 @@ const Edital = () => {
                                </button>
                              )}
                            </div>
-                           <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-center">
-                             <p className="text-[10px] font-black text-slate-400 uppercase">Horas</p>
-                             <p className="font-bold text-xs">{Math.floor(s.timeSpent/3600)}h</p>
+                           <div className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-center min-w-[90px]">
+                             <p className="text-[10px] font-black text-slate-400 uppercase">Tempo</p>
+                             <p className="font-bold text-xs">
+                               {Math.floor(s.timeSpent / 3600)}h {Math.floor((s.timeSpent % 3600) / 60)}m
+                             </p>
                            </div>
                         </div>
                       </div>
